@@ -4,6 +4,7 @@
 
 pub mod groups;
 pub mod membership;
+pub mod users;
 
 /// SQLite timestamps are UTC milliseconds since the Unix epoch.
 pub(crate) fn now_millis() -> i64 {

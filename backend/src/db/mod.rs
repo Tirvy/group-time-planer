@@ -135,7 +135,7 @@ mod tests {
             bind_addr: "127.0.0.1:0".parse().unwrap(),
             database_path: path,
             db_max_connections: max_connections,
-            frontend_dist: std::path::PathBuf::from("frontend/dist"),
+            ..Config::default()
         }
     }
 

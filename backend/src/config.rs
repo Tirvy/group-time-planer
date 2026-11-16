@@ -1,18 +1,47 @@
 use std::{
+    fmt,
     net::SocketAddr,
     path::{Path, PathBuf},
 };
 
 /// Runtime configuration loaded from environment variables (optionally via `.env`).
 ///
-/// Secrets are intentionally not part of this struct yet: the Telegram bot token is
-/// introduced in Phase 2 together with a redacting wrapper.
+/// Secrets are wrapped so `Debug` output and accidental formatting cannot leak
+/// them into logs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub bind_addr: SocketAddr,
     pub database_path: PathBuf,
     pub db_max_connections: u32,
     pub frontend_dist: PathBuf,
+    pub telegram_bot_token: Option<SecretString>,
+}
+
+/// A secret that never prints its value through `Debug` or `Display`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SecretString(String);
+
+impl SecretString {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Explicit access for constructing API clients. Never log the result.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SecretString([REDACTED])")
+    }
+}
+
+impl fmt::Display for SecretString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +61,7 @@ impl Default for Config {
             database_path: PathBuf::from(Self::DEFAULT_DATABASE_PATH),
             db_max_connections: Self::DEFAULT_MAX_CONNECTIONS,
             frontend_dist: PathBuf::from(Self::DEFAULT_FRONTEND_DIST),
+            telegram_bot_token: None,
         }
     }
 }
@@ -84,11 +114,14 @@ impl Config {
             None => PathBuf::from(Self::DEFAULT_FRONTEND_DIST),
         };
 
+        let telegram_bot_token = value(&lookup, "TELOXIDE_TOKEN").map(SecretString::new);
+
         Ok(Self {
             bind_addr,
             database_path,
             db_max_connections,
             frontend_dist,
+            telegram_bot_token,
         })
     }
 
@@ -135,6 +168,25 @@ mod tests {
             config.frontend_dist,
             PathBuf::from(Config::DEFAULT_FRONTEND_DIST)
         );
+        assert!(config.telegram_bot_token.is_none());
+    }
+
+    #[test]
+    fn loads_bot_token_without_exposing_it() {
+        let secret = "123456789:AAH-secret-token-value";
+        let config = config_from(&[("TELOXIDE_TOKEN", secret)]).expect("token is valid");
+
+        let token = config.telegram_bot_token.as_ref().expect("token loaded");
+        assert_eq!(token.expose(), secret);
+        assert_eq!(token.to_string(), "[REDACTED]");
+        assert!(!format!("{config:?}").contains(secret));
+        assert!(!format!("{token:?}").contains(secret));
+    }
+
+    #[test]
+    fn blank_bot_token_is_treated_as_unset() {
+        let config = config_from(&[("TELOXIDE_TOKEN", "   ")]).unwrap();
+        assert!(config.telegram_bot_token.is_none());
     }
 
     #[test]

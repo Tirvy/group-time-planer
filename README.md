@@ -65,6 +65,13 @@ cargo test
 cd frontend && npm run typecheck && npm run build
 ```
 
+### Telegram bot
+- Put the token from @BotFather into `TELOXIDE_TOKEN` in `.env` or the environment. Without a token the backend runs API-only and logs a warning.
+- Implemented commands: `/start`, `/create`, `/groups`, `/help`. All bot text is Russian; command identifiers are English.
+- `/create` asks for a group name in a guided step. `/groups` lists memberships and lets the user choose the active group.
+- The active group and a pending "create" prompt are kept in memory for the single backend instance. After a restart the bot asks the user to choose again instead of relying on stale context.
+- The bot token is never logged; configuration redacts it in debug output.
+
 ### Data and operations
 - SQLite lives at the project-local `data/app.db`; the directory is created at startup.
 - The database file is created only when missing. Startup, migrations and upgrades never delete or recreate it.

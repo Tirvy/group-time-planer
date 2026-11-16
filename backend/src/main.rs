@@ -4,6 +4,7 @@ use anyhow::Context;
 use axum::Router;
 use raid_scheduler_backend::{
     api::{self, AppState},
+    bot,
     config::Config,
     db,
 };
@@ -35,6 +36,8 @@ async fn main() -> anyhow::Result<()> {
         .context("failed to apply database migrations")?;
     tracing::info!("database migrations applied");
 
+    start_telegram_bot(&config, &pool);
+
     let state = AppState { db: pool.clone() };
     let app = with_static_frontend(api::router(state), &config.frontend_dist)
         .layer(TraceLayer::new_for_http());
@@ -65,6 +68,24 @@ fn log_startup(config: &Config) {
         version = env!("CARGO_PKG_VERSION"),
         "starting raid scheduler backend"
     );
+}
+
+/// Runs the Telegram bot in the background when a token is configured.
+///
+/// Long polling is enough for the MVP and avoids exposing a webhook endpoint.
+/// The token is never logged; `Config` redacts it in `Debug` output.
+fn start_telegram_bot(config: &Config, pool: &sqlx::SqlitePool) {
+    let Some(token) = config.telegram_bot_token.clone() else {
+        tracing::warn!("TELOXIDE_TOKEN is not set; Telegram bot is disabled");
+        return;
+    };
+
+    let bot = teloxide::Bot::new(token.expose());
+    let bot_pool = pool.clone();
+    tokio::spawn(async move {
+        bot::run(bot, bot_pool).await;
+    });
+    tracing::info!("Telegram bot enabled (long polling)");
 }
 
 /// Serves the Vite build when present. Missing builds are tolerated so the API

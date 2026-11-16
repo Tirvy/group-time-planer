@@ -66,7 +66,7 @@ mod tests {
             bind_addr: "127.0.0.1:0".parse().unwrap(),
             database_path: dir.path().join("app.db"),
             db_max_connections: 1,
-            frontend_dist: std::path::PathBuf::from("frontend/dist"),
+            ..Config::default()
         };
         let pool = db::connect(&config).await.unwrap();
         (api::router(api::AppState { db: pool.clone() }), pool, dir)

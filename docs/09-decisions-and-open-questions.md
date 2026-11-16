@@ -148,6 +148,9 @@ Rules:
 | Migrations | Embedded SQLx migrations, forward-only, applied automatically at startup; existing data is never recreated | 2026-11-16 |
 | Write transactions | `BEGIN IMMEDIATE` and short transactions; group creation and membership joins are transactional | 2026-11-16 |
 | Database invariants | Triggers enforce the 20-member cap and non-overlapping preferences in addition to service checks | 2026-11-16 |
+| Bot | `teloxide` 0.17 with long polling and rustls; no webhook endpoint in the MVP | 2026-11-16 |
+| Bot context | Active group selection and pending group-name prompt are in memory per user (10-minute TTL) and clear on restart | 2026-11-16 |
+| Bot security | Token is held in a redacting wrapper; `tracing-log` is intentionally disabled so token-bearing HTTP client logs are dropped | 2026-11-16 |
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
 | Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
@@ -184,6 +187,7 @@ the related phase is marked done.
 | 6 | Whether percentages are displayed anywhere | 5–7 | Optional; if shown, denominator = completed members |
 | 7 | Cleanup of expired/revoked invitation rows | post-MVP | Keep rows; validation rejects them |
 | 8 | Deployment target: Docker Compose or systemd | 8 | Both acceptable per architecture; document the chosen one |
+| 9 | Should the bot remember the active group across restarts? | post-MVP | In-memory selection; the user is asked to choose again after a restart |
 
 ## 5. Explicitly out of scope
 
@@ -199,3 +203,4 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 |---|---|
 | 2026-11-16 | Repaired documentation numbering (files were offset by one and `02` duplicated `01`). Created this decisions document. Locked Vuetify 4.x, group name length 1–64, and the DST policy above. |
 | 2026-11-16 | Phase 1: added the initial SQLite schema (`users`, `groups`, `group_members`, `weekly_preferences`, `invitations`), domain types, transactional group/membership services, and migration/constraint/cascade tests. Recorded storage, migration and transaction decisions above. |
+| 2026-11-16 | Phase 2: added the Telegram bot (`/start`, `/create`, `/groups`, `/help`), user upsert from Telegram updates, group creation and selection, Russian bot copy, redacted token configuration, and service tests. |

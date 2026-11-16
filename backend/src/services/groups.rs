@@ -2,7 +2,7 @@ use sqlx::{Connection, SqlitePool};
 
 use crate::{
     db,
-    domain::{GroupId, GroupName, MEMBER_COLORS, MemberRole, UserId},
+    domain::{GroupId, GroupName, MEMBER_COLORS, MemberRole, SetupState, UserId},
 };
 
 /// A group with its owner relationship resolved.
@@ -15,12 +15,36 @@ pub struct Group {
     pub updated_at: i64,
 }
 
+/// Group data as seen by one member, including their role and setup state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupSummary {
+    pub id: GroupId,
+    pub name: GroupName,
+    pub role: MemberRole,
+    pub member_count: i64,
+    pub setup_completed_at: Option<i64>,
+}
+
+impl GroupSummary {
+    pub fn setup_state(&self) -> SetupState {
+        SetupState::from_completed_at(self.setup_completed_at)
+    }
+
+    pub fn is_owner(&self) -> bool {
+        self.role.is_owner()
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum GroupError {
     #[error("user {0} does not exist")]
     UserNotFound(UserId),
+    #[error("group {0} is not available to this user")]
+    NotAMember(GroupId),
     #[error("database returned an invalid group id")]
     InvalidGroupId,
+    #[error("stored group data is invalid: {0}")]
+    CorruptData(String),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -80,5 +104,80 @@ pub async fn create_with_owner(
         owner_user_id: owner,
         created_at: now,
         updated_at: now,
+    })
+}
+
+/// Lists every group the user belongs to, with the owner's groups first.
+///
+/// A user may be a member of multiple groups; preferences and setup state are
+/// independent per group.
+pub async fn list_for_user(
+    pool: &SqlitePool,
+    user: UserId,
+) -> Result<Vec<GroupSummary>, GroupError> {
+    let rows: Vec<(i64, String, String, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT g.id,
+                g.name,
+                gm.role,
+                gm.setup_completed_at,
+                (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count
+         FROM group_members gm
+         JOIN groups g ON g.id = gm.group_id
+         WHERE gm.user_id = ?
+         ORDER BY CASE gm.role WHEN 'owner' THEN 0 ELSE 1 END,
+                  gm.joined_at ASC,
+                  g.id ASC",
+    )
+    .bind(user.get())
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter().map(summary_from_row).collect()
+}
+
+/// Returns one group only if the user is a current member.
+///
+/// Used when accepting a selection callback: group IDs from callback data are
+/// never trusted without a fresh membership check.
+pub async fn get_for_user(
+    pool: &SqlitePool,
+    user: UserId,
+    group: GroupId,
+) -> Result<GroupSummary, GroupError> {
+    let row: Option<(i64, String, String, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT g.id,
+                g.name,
+                gm.role,
+                gm.setup_completed_at,
+                (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count
+         FROM group_members gm
+         JOIN groups g ON g.id = gm.group_id
+         WHERE gm.user_id = ? AND g.id = ?",
+    )
+    .bind(user.get())
+    .bind(group.get())
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(row) => summary_from_row(row),
+        None => Err(GroupError::NotAMember(group)),
+    }
+}
+
+fn summary_from_row(
+    (id, name, role, setup_completed_at, member_count): (i64, String, String, Option<i64>, i64),
+) -> Result<GroupSummary, GroupError> {
+    let id = GroupId::new(id).map_err(|_| GroupError::InvalidGroupId)?;
+    let name =
+        GroupName::parse(&name).map_err(|error| GroupError::CorruptData(error.to_string()))?;
+    let role =
+        MemberRole::from_db(&role).map_err(|error| GroupError::CorruptData(error.to_string()))?;
+    Ok(GroupSummary {
+        id,
+        name,
+        role,
+        member_count,
+        setup_completed_at,
     })
 }
