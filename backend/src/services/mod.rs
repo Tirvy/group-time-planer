@@ -1,0 +1,11 @@
+//! Application services shared by the Telegram bot and the Mini App API.
+//!
+//! Business rules live here, not in HTTP or Telegram handlers.
+
+pub mod groups;
+pub mod membership;
+
+/// SQLite timestamps are UTC milliseconds since the Unix epoch.
+pub(crate) fn now_millis() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}

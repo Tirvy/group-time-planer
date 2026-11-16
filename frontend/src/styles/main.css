@@ -1,0 +1,16 @@
+/* Mobile-first baseline. Telegram injects safe-area insets for full-screen mode. */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}

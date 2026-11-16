@@ -32,3 +32,45 @@ A group shares a recurring weekly calendar where each member marks times they **
 
 ## Important product language
 A selected slot means **preferred**. An unselected slot means **no stated preference**, not unavailable. The product must never label the result as confirmed availability.
+
+## Development
+
+Requirements: Rust 1.90+, Node.js 22.12+.
+
+```bash
+# 1. Backend (from the repository root)
+cp .env.example .env          # optional; defaults work for local development
+cargo run -p raid-scheduler-backend
+
+# 2. Frontend dev server (separate terminal)
+cd frontend
+npm install
+npm run dev                   # http://localhost:5173, proxies /api and /health
+```
+
+Production build and single-process run:
+
+```bash
+cd frontend && npm run build && cd ..
+cargo run -p raid-scheduler-backend --release
+# Backend serves frontend/dist on http://127.0.0.1:8080 and exposes GET /health
+```
+
+Checks:
+
+```bash
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cd frontend && npm run typecheck && npm run build
+```
+
+### Data and operations
+- SQLite lives at the project-local `data/app.db`; the directory is created at startup.
+- The database file is created only when missing. Startup, migrations and upgrades never delete or recreate it.
+- SQLx migrations are embedded in the backend and applied automatically at startup. They are forward-only and never rewrite existing data.
+- `data/`, `.env` and SQLite sidecar files are ignored by Git.
+- **No automated backups are included in the MVP.** Losing `data/app.db` means losing all groups and preferences permanently.
+- Keep the database on a local filesystem, not a network share.
+- Telegram Mini Apps require HTTPS in production; terminate TLS in a reverse proxy and forward to the backend.
+
