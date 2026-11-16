@@ -18,6 +18,8 @@ pub struct Config {
     pub telegram_bot_token: Option<SecretString>,
     /// Maximum accepted age of Telegram Mini App `initData`.
     pub init_data_max_age: Duration,
+    /// HTTPS origin used for Telegram Web App buttons. No query or fragment.
+    pub public_base_url: Option<String>,
 }
 
 /// A secret that never prints its value through `Debug` or `Display`.
@@ -55,6 +57,8 @@ pub enum ConfigError {
     InvalidMaxConnections { value: String },
     #[error("INIT_DATA_MAX_AGE_SECS must be between 60 and 604800, got {value:?}")]
     InvalidInitDataMaxAge { value: String },
+    #[error("PUBLIC_BASE_URL must be an https URL without query or fragment, got {value:?}")]
+    InvalidPublicBaseUrl { value: String },
 }
 
 impl Default for Config {
@@ -68,6 +72,7 @@ impl Default for Config {
             frontend_dist: PathBuf::from(Self::DEFAULT_FRONTEND_DIST),
             telegram_bot_token: None,
             init_data_max_age: Duration::from_secs(Self::DEFAULT_INIT_DATA_MAX_AGE_SECS),
+            public_base_url: None,
         }
     }
 }
@@ -140,6 +145,23 @@ impl Config {
             None => Duration::from_secs(Self::DEFAULT_INIT_DATA_MAX_AGE_SECS),
         };
 
+        let public_base_url = match value(&lookup, "PUBLIC_BASE_URL") {
+            Some(raw) => {
+                let parsed = url::Url::parse(&raw).ok().filter(|url| {
+                    url.scheme() == "https"
+                        && url.host().is_some()
+                        && url.query().is_none()
+                        && url.fragment().is_none()
+                });
+                Some(
+                    parsed
+                        .ok_or(ConfigError::InvalidPublicBaseUrl { value: raw })?
+                        .to_string(),
+                )
+            }
+            None => None,
+        };
+
         Ok(Self {
             bind_addr,
             database_path,
@@ -147,6 +169,7 @@ impl Config {
             frontend_dist,
             telegram_bot_token,
             init_data_max_age,
+            public_base_url,
         })
     }
 
@@ -250,6 +273,35 @@ mod tests {
     fn rejects_invalid_bind_addr() {
         let error = config_from(&[("APP_BIND_ADDR", "not-a-socket")]).unwrap_err();
         assert!(matches!(error, ConfigError::InvalidBindAddr { .. }));
+    }
+
+    #[test]
+    fn loads_and_normalizes_public_base_url() {
+        let config = config_from(&[("PUBLIC_BASE_URL", "https://scheduler.example.com")]).unwrap();
+        assert_eq!(
+            config.public_base_url.as_deref(),
+            Some("https://scheduler.example.com/")
+        );
+
+        let blank = config_from(&[("PUBLIC_BASE_URL", "   ")]).unwrap();
+        assert!(blank.public_base_url.is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_public_base_urls() {
+        for value in [
+            "http://example.com",
+            "ftp://example.com",
+            "not-a-url",
+            "https://example.com?x=1",
+            "https://example.com/#frag",
+        ] {
+            let error = config_from(&[("PUBLIC_BASE_URL", value)]).unwrap_err();
+            assert!(
+                matches!(error, ConfigError::InvalidPublicBaseUrl { .. }),
+                "expected rejection for {value}"
+            );
+        }
     }
 
     #[test]

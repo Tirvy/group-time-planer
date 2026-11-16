@@ -1,0 +1,40 @@
+name: raid-scheduler
+
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      TELOXIDE_TOKEN: ${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN in .env}
+      PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN in .env}
+      APP_BIND_ADDR: 0.0.0.0:8080
+      DATABASE_PATH: /app/data/app.db
+      FRONTEND_DIST: /app/frontend/dist
+      INIT_DATA_MAX_AGE_SECS: ${INIT_DATA_MAX_AGE_SECS:-86400}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      # Persistent, project-local database. NEVER delete this directory.
+      - ./data:/app/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

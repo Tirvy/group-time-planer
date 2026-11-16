@@ -2,6 +2,7 @@ use crate::domain::{GroupId, InvitationId, InvitationToken, UserId};
 
 pub const MENU_CREATE: &str = "menu:create";
 pub const MENU_GROUPS: &str = "menu:groups";
+pub const MENU_CALENDAR: &str = "menu:calendar";
 pub const MENU_HELP: &str = "menu:help";
 pub const CANCEL: &str = "cancel";
 
@@ -11,6 +12,7 @@ pub const CANCEL: &str = "cancel";
 pub enum CallbackAction {
     MenuCreate,
     MenuGroups,
+    MenuCalendar,
     MenuHelp,
     SelectGroup(GroupId),
     JoinInvitation(InvitationToken),
@@ -26,6 +28,7 @@ pub fn parse(data: &str) -> Option<CallbackAction> {
     match data {
         MENU_CREATE => Some(CallbackAction::MenuCreate),
         MENU_GROUPS => Some(CallbackAction::MenuGroups),
+        MENU_CALENDAR => Some(CallbackAction::MenuCalendar),
         MENU_HELP => Some(CallbackAction::MenuHelp),
         CANCEL => Some(CallbackAction::Cancel),
         other => {
@@ -125,6 +128,7 @@ mod tests {
     fn parses_menu_and_cancel_actions() {
         assert_eq!(parse(MENU_CREATE), Some(CallbackAction::MenuCreate));
         assert_eq!(parse(MENU_GROUPS), Some(CallbackAction::MenuGroups));
+        assert_eq!(parse(MENU_CALENDAR), Some(CallbackAction::MenuCalendar));
         assert_eq!(parse(MENU_HELP), Some(CallbackAction::MenuHelp));
         assert_eq!(parse(CANCEL), Some(CallbackAction::Cancel));
     }

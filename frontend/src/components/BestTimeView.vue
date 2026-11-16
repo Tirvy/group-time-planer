@@ -48,7 +48,7 @@ const rows = computed(() =>
         </v-chip>
         <v-chip size="small" color="success" variant="tonal">
           {{ ru.planner.bestConfigured }}:
-          {{ props.bestTime.configured_member_count }} из
+          {{ props.bestTime.configured_member_count }} {{ ru.common.of }}
           {{ props.bestTime.total_member_count }}
         </v-chip>
         <v-chip

@@ -168,6 +168,9 @@ Rules:
 | Best-time ranking | Boundary ranges from converted segments; a member counts only when their interval fully covers a range; pending excluded; completed-empty stays in the denominator; adjacent equal counts merge; results sorted by count | 2026-11-16 |
 | PNG timetable | Rendered from the same converted calendar model with `resvg`; 15-minute dots, group name, reference week, timezone, generation timestamp, member legend and pending indicators | 2026-11-16 |
 | PNG fonts | System fonts are loaded through `fontdb`; deployment hosts must provide Cyrillic-capable fonts | 2026-11-16 |
+| Deployment | Docker Compose runs the backend plus Caddy for automatic HTTPS; `./data` is bind-mounted and the process runs as UID 10001 | 2026-11-16 |
+| Bot calendar link | `PUBLIC_BASE_URL` is a validated HTTPS origin used by the `/calendar` Web App button; the Mini App preselects the `group` query parameter after membership checks | 2026-11-16 |
+| CI | GitHub Actions runs Rust formatting, clippy and tests plus frontend tests and build | 2026-11-16 |
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
 | Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
@@ -226,3 +229,4 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 | 2026-11-16 | Phase 5: added the preference model and transactional replacement service, group list and preference API endpoints, the Monday–Sunday 30-minute editor, tap/drag/keyboard interaction, clear/discard/save flows, and pending vs completed-empty states. Added backend and frontend model tests. |
 | 2026-11-16 | Phase 6: added the shared reference-week and timezone conversion service with the documented DST policy, combined and individual calendar APIs, converted viewer-timezone read views, and DST/reference-week tests. |
 | 2026-11-16 | Phase 7: added best-time ranking over converted intervals, adjacent equal-score merging, `/besttime` and `/timetable` bot commands, the Mini App best-time view and PNG download, and `resvg`-rendered PNG timetables from the shared calendar model. |
+| 2026-11-16 | Phase 8: added the `/calendar` Web App entry point, `PUBLIC_BASE_URL` configuration, Docker/Caddy deployment with persistent data, CI, Russian-copy cleanup, and deployment/no-backup documentation. |

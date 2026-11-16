@@ -16,11 +16,12 @@ use teloxide::{
     dptree,
     prelude::*,
     types::{
-        BotCommand, CallbackQuery, CallbackQueryId, ChatId, ForceReply, InputFile, Message,
-        MessageId, User as TelegramUser,
+        BotCommand, CallbackQuery, CallbackQueryId, ChatId, ForceReply, InlineKeyboardButton,
+        InlineKeyboardMarkup, InputFile, Message, MessageId, User as TelegramUser, WebAppInfo,
     },
     utils::command::BotCommands,
 };
+use url::Url;
 
 use crate::{
     domain::{GroupId, GroupName, IanaTimezone, InvitationId, InvitationToken, TelegramId, UserId},
@@ -49,6 +50,8 @@ enum Command {
     Create,
     #[command(description = "Мои группы")]
     Groups,
+    #[command(description = "Открыть календарь")]
+    Calendar,
     #[command(description = "Пригласить участников")]
     Invite,
     #[command(description = "Участники группы")]
@@ -67,8 +70,14 @@ enum Command {
     Help,
 }
 
+/// Runtime settings that handlers need besides the database.
+#[derive(Debug, Clone)]
+pub struct BotSettings {
+    pub public_base_url: Option<String>,
+}
+
 /// Runs long polling until the dispatcher stops.
-pub async fn run(bot: Bot, pool: SqlitePool) {
+pub async fn run(bot: Bot, pool: SqlitePool, settings: BotSettings) {
     // Command registration is cosmetic; do not delay long polling for it.
     let command_bot = bot.clone();
     tokio::spawn(async move { register_commands(&command_bot).await });
@@ -76,8 +85,9 @@ pub async fn run(bot: Bot, pool: SqlitePool) {
     tracing::info!("telegram bot long polling started");
 
     let sessions = Arc::new(BotSessions::new());
+    let settings = Arc::new(settings);
     let mut dispatcher = Dispatcher::builder(bot, schema())
-        .dependencies(dptree::deps![pool, sessions])
+        .dependencies(dptree::deps![pool, sessions, settings])
         .build();
 
     dispatcher.dispatch().await;
@@ -89,6 +99,7 @@ async fn register_commands(bot: &Bot) {
         BotCommand::new("start", "Начать работу"),
         BotCommand::new("create", "Создать группу"),
         BotCommand::new("groups", "Мои группы"),
+        BotCommand::new("calendar", "Открыть календарь"),
         BotCommand::new("invite", "Пригласить участников"),
         BotCommand::new("members", "Участники группы"),
         BotCommand::new("besttime", "Лучшее время"),
@@ -138,6 +149,7 @@ async fn handle_command(
     command: Command,
     pool: SqlitePool,
     sessions: Arc<BotSessions>,
+    settings: Arc<BotSettings>,
 ) -> Result<(), RequestError> {
     let chat = message.chat.id;
     let Some(from) = message.from.as_ref() else {
@@ -181,6 +193,9 @@ async fn handle_command(
         }
         Command::Groups => {
             send_groups(&bot, chat, user.id, &pool, &sessions).await?;
+        }
+        Command::Calendar => {
+            send_calendar_link(&bot, chat, &pool, &sessions, &user, &settings).await?;
         }
         Command::Invite => {
             send_invitation(&bot, chat, &pool, &sessions, &user).await?;
@@ -276,6 +291,7 @@ async fn handle_callback(
     query: CallbackQuery,
     pool: SqlitePool,
     sessions: Arc<BotSessions>,
+    settings: Arc<BotSettings>,
 ) -> Result<(), RequestError> {
     let Some(chat) = query.message.as_ref().map(|message| message.chat().id) else {
         answer_alert(&bot, &query.id, texts::CALLBACK_UNAVAILABLE).await?;
@@ -305,6 +321,10 @@ async fn handle_callback(
         CallbackAction::MenuGroups => {
             answer_silent(&bot, &query.id).await?;
             send_groups(&bot, chat, user.id, &pool, &sessions).await?;
+        }
+        CallbackAction::MenuCalendar => {
+            answer_silent(&bot, &query.id).await?;
+            send_calendar_link(&bot, chat, &pool, &sessions, &user, &settings).await?;
         }
         CallbackAction::MenuHelp => {
             answer_silent(&bot, &query.id).await?;
@@ -478,6 +498,41 @@ async fn select_group(
             bot.send_message(chat, texts::GENERIC_ERROR).await?;
         }
     }
+    Ok(())
+}
+
+async fn send_calendar_link(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+    settings: &BotSettings,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+
+    let Some(base_url) = settings.public_base_url.as_deref() else {
+        bot.send_message(chat, texts::MINI_APP_UNAVAILABLE).await?;
+        return Ok(());
+    };
+
+    let mut url = match Url::parse(base_url) {
+        Ok(url) => url,
+        Err(_) => {
+            bot.send_message(chat, texts::MINI_APP_UNAVAILABLE).await?;
+            return Ok(());
+        }
+    };
+    url.query_pairs_mut()
+        .append_pair("group", &group.id.get().to_string());
+
+    let button = InlineKeyboardButton::web_app("Открыть календарь", WebAppInfo { url });
+
+    bot.send_message(chat, texts::calendar_link(group.name.as_str()))
+        .reply_markup(InlineKeyboardMarkup::new(vec![vec![button]]))
+        .await?;
     Ok(())
 }
 

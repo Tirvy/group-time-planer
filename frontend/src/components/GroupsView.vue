@@ -100,6 +100,17 @@ async function loadGroups(): Promise<void> {
       return
     }
 
+    const requestedGroup = new URLSearchParams(window.location.search).get(
+      'group',
+    )
+    const requested = requestedGroup
+      ? response.groups.find((group) => group.id === requestedGroup)
+      : undefined
+    if (requested) {
+      await selectGroup(requested, false)
+      return
+    }
+
     if (selected.value) {
       const refreshed = response.groups.find(
         (group) => group.id === selected.value?.id,

@@ -67,7 +67,7 @@ cd frontend && npm run typecheck && npm test && npm run build
 
 ### Telegram bot
 - Put the token from @BotFather into `TELOXIDE_TOKEN` in `.env` or the environment. Without a token the backend runs API-only and logs a warning.
-- Implemented commands: `/start`, `/create`, `/groups`, `/invite`, `/members`, `/leave`, `/transfer`, `/delete`, `/besttime`, `/timetable`, `/help`. All bot text is Russian; command identifiers are English.
+- Implemented commands: `/start`, `/create`, `/groups`, `/calendar`, `/invite`, `/members`, `/leave`, `/transfer`, `/delete`, `/besttime`, `/timetable`, `/help`. All bot text is Russian; command identifiers are English.
 - `/create` asks for a group name in a guided step. `/groups` lists memberships and lets the user choose the active group.
 - `/invite` (owner only) creates a Telegram deep link. Opening the link shows a read-only preview; joining requires the explicit «Вступить в группу» button, and capacity/membership are revalidated at confirmation. The invitation message has a revoke button.
 - `/members` shows the owner first, then other members, with setup status. `/leave`, `/transfer` and `/delete` require confirmation and revalidate permissions server-side.
@@ -97,4 +97,65 @@ cd frontend && npm run typecheck && npm test && npm run build
 - **No automated backups are included in the MVP.** Losing `data/app.db` means losing all groups and preferences permanently.
 - Keep the database on a local filesystem, not a network share.
 - Telegram Mini Apps require HTTPS in production; terminate TLS in a reverse proxy and forward to the backend.
+
+## Deployment
+
+Docker Compose with Caddy is the included deployment path. It runs one backend
+container and Caddy for automatic HTTPS.
+
+Prerequisites: a Linux server with Docker/Compose, a DNS record for the domain
+pointing at the server, and ports 80/443 reachable.
+
+```bash
+cp .env.example .env
+# Set TELOXIDE_TOKEN and DOMAIN in .env. PUBLIC_BASE_URL is set by Compose as
+# https://DOMAIN and enables the bot's "Открыть календарь" Web App button.
+
+mkdir -p data
+sudo chown -R 10001:10001 data    # Linux bind-mount permissions
+
+docker compose up -d --build
+docker compose logs -f backend
+```
+
+Caddy obtains a TLS certificate automatically. Verify:
+
+```bash
+curl -fsS https://YOUR_DOMAIN/health
+```
+
+Then configure @BotFather:
+- set the Mini App URL to `https://YOUR_DOMAIN/`;
+- optionally set the bot menu button to the same URL.
+
+### Persistence, restarts and migrations
+
+- The database is bind-mounted from `./data` to `/app/data` in the container.
+- `docker compose restart backend` preserves the database; pending migrations
+  are applied at startup without recreating tables.
+- Never delete `./data` to “fix” a deployment. It is the only copy of the data.
+- **No automated backups are provided.** If you need a manual backup, stop the
+  backend first and copy `data/app.db` (and its `-wal`/`-shm` files if present),
+  then start it again. Data loss without a manual backup is permanent.
+
+### Non-Docker deployment
+
+Build the frontend and backend, then run the single backend binary behind an
+HTTPS reverse proxy:
+
+```bash
+cd frontend && npm ci && npm run build && cd ..
+cargo build --release -p raid-scheduler-backend
+
+APP_BIND_ADDR=127.0.0.1:8080 \
+DATABASE_PATH=data/app.db \
+FRONTEND_DIST=frontend/dist \
+PUBLIC_BASE_URL=https://YOUR_DOMAIN \
+TELOXIDE_TOKEN=... \
+./target/release/raid-scheduler-backend
+```
+
+Install Cyrillic-capable system fonts (for example `fonts-dejavu-core` on
+Debian/Ubuntu) so `/timetable` PNG text renders. Use systemd or another process
+supervisor, and point the proxy at `127.0.0.1:8080`.
 

@@ -18,6 +18,10 @@ pub fn main_menu() -> InlineKeyboardMarkup {
             callbacks::MENU_GROUPS,
         )],
         vec![InlineKeyboardButton::callback(
+            "Открыть календарь",
+            callbacks::MENU_CALENDAR,
+        )],
+        vec![InlineKeyboardButton::callback(
             "Помощь",
             callbacks::MENU_HELP,
         )],
@@ -168,6 +172,7 @@ mod tests {
             vec![
                 callbacks::MENU_CREATE.to_owned(),
                 callbacks::MENU_GROUPS.to_owned(),
+                callbacks::MENU_CALENDAR.to_owned(),
                 callbacks::MENU_HELP.to_owned()
             ]
         );

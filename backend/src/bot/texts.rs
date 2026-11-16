@@ -47,6 +47,7 @@ pub const REVOKED_TOAST: &str = "Приглашение отозвано";
 pub const ALREADY_REVOKED_TOAST: &str = "Приглашение уже отозвано";
 pub const TIMEZONE_REQUIRED: &str =
     "Сначала выберите часовой пояс в Mini App. Без него расписание нельзя пересчитать.";
+pub const MINI_APP_UNAVAILABLE: &str = "Открытие Mini App временно недоступно. Попробуйте позже.";
 
 pub fn start(name: &str) -> String {
     format!(
@@ -63,6 +64,7 @@ pub fn help() -> String {
      Доступные команды:\n\
      /create — создать группу\n\
      /groups — мои группы и выбор активной\n\
+     /calendar — открыть календарь в Mini App\n\
      /invite — пригласить участников (владелец)\n\
      /members — участники и статус календарей\n\
      /besttime — лучшее время по предпочтениям\n\
@@ -403,6 +405,10 @@ pub fn best_time(best: &BestTime) -> String {
          Пустое время не означает недоступность.",
     );
     text
+}
+
+pub fn calendar_link(group_name: &str) -> String {
+    format!("Откройте Mini App, чтобы настроить или посмотреть календарь группы «{group_name}».")
 }
 
 pub fn timetable_caption(

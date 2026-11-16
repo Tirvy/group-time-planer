@@ -93,8 +93,11 @@ fn start_telegram_bot(config: &Config, pool: &sqlx::SqlitePool) -> Option<teloxi
     let bot = teloxide::Bot::new(token.expose());
     let polling_bot = bot.clone();
     let bot_pool = pool.clone();
+    let bot_settings = bot::BotSettings {
+        public_base_url: config.public_base_url.clone(),
+    };
     tokio::spawn(async move {
-        bot::run(polling_bot, bot_pool).await;
+        bot::run(polling_bot, bot_pool, bot_settings).await;
     });
     tracing::info!("Telegram bot enabled (long polling)");
     Some(bot)

@@ -117,7 +117,7 @@ function confirmChange(): void {
         clearable
         density="comfortable"
         variant="outlined"
-        no-data-text="Ничего не найдено"
+        :no-data-text="ru.timezone.noResults"
         autocomplete="off"
       />
 
