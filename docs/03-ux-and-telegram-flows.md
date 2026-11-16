@@ -1,96 +1,85 @@
-# 02. User Stories and Acceptance Criteria
+# 03. UX and Telegram Flows
 
-## Group creation
-**As a user**, I can create a group with a name so that I can invite friends.
+## 1. Main bot menu
+All user-facing text is Russian. Suggested main actions:
+- «Мои группы»
+- «Создать группу»
+- «Открыть календарь»
+- «Помощь»
 
-Acceptance:
-- `/create` starts a guided flow.
-- Name is trimmed, non-empty and within a documented length limit.
-- Creator is inserted as owner and first member atomically.
-- Group starts with zero invitations and creator setup pending until they save preferences.
+Use Telegram commands as shortcuts, not as the only discoverable navigation.
 
-## Group list and selection
-**As a user**, I can see groups I belong to and choose the active group.
+## 2. Commands
+| Command | Behavior |
+|---|---|
+| `/create` | Guided group creation |
+| `/groups` | List/select groups |
+| `/invite` | Create or show invitation for selected group |
+| `/calendar` | Open Mini App calendar for selected group |
+| `/timetable` | Generate and send PNG timetable |
+| `/besttime` | Show ranked preference intervals |
+| `/members` | Show group members and setup status |
+| `/leave` | Leave group, with confirmation; owner must transfer/delete first |
+| `/transfer` | Transfer ownership to an existing member |
+| `/delete` | Delete group, owner only, with confirmation |
+| `/help` | Explain the product and commands |
 
-Acceptance:
-- `/groups` lists only current memberships.
-- If the user has no groups, offer create/join actions.
-- If exactly one group is available, calendar actions may open it directly.
-- If multiple groups exist, ask the user to choose; do not guess based on stale context.
+If a command requires a group and the user belongs to multiple groups, show a group picker. If there is exactly one group, it may be selected automatically. If there are no groups, show create/join guidance.
 
-## Invitation preview and joining
-Acceptance:
-- Opening a valid deep link displays a preview and does not join.
-- Preview displays group name, owner, member count and member names, plus capacity status.
-- Confirmation callback is bound to the Telegram user who opened the preview.
-- Confirmation revalidates token hash, expiry, revocation, group existence, capacity and membership.
-- Repeated confirmation does not create duplicate membership.
-- At capacity (20), reject join with a clear Russian message.
-- If already a member, show already-member response and calendar shortcut.
-- Successful join creates a pending calendar setup state and notifies current owner best-effort.
+## 3. Invitation preview
+Deep link: `https://t.me/<BOT_USERNAME>?start=join_<TOKEN>`.
+1. Parse start payload and locate token hash.
+2. Validate that invitation exists, is active, not expired, group exists and group has capacity.
+3. Show group name, owner, member count, member names and «Вступить в группу» button.
+4. Do not create membership at preview time.
+5. On confirmation, revalidate everything inside the membership transaction.
+6. On success, show «Вы вступили в группу» and a «Настроить календарь» action.
+7. Notify current owner best-effort.
 
-## Timezone setup
-Acceptance:
-- First calendar opening requires timezone selection.
-- UI may preselect device/browser timezone as a suggestion, but user explicitly confirms.
-- Persist IANA timezone on user profile.
-- Invalid timezone identifiers are rejected.
-- User may change timezone later after a clear explanation that displayed times and interpretation of their recurring local preferences will change.
-- No calendar or ranking view may silently fall back to server timezone.
+## 4. First calendar opening / timezone selection
+1. Authenticate Mini App request using Telegram `initData`.
+2. If the user's timezone is absent, block calendar view and show timezone selection.
+3. Suggest browser-detected IANA timezone where available, but require explicit confirmation.
+4. Save timezone to user profile.
+5. Continue to calendar, showing upcoming Monday–Sunday in that timezone.
 
-## Calendar editing
-Acceptance:
-- Calendar shows Monday–Sunday and 48 half-hour slots per day.
-- User can toggle an individual slot.
-- User can select/deselect a continuous range using pointer drag.
-- Mobile scrolling remains usable; drag interaction must not make the calendar impossible to scroll.
-- User can clear a range.
-- Save replaces that user's intervals for the active group atomically.
-- Empty save is valid and marks setup complete.
-- Unsaved changes are indicated; navigating away prompts to discard or stay.
-- Only the authenticated user can edit their own preferences.
+Timezone selector should support search by city/region and show the actual IANA identifier or a clear city/region label. Do not store a fixed UTC offset.
 
-## Calendar visibility
-Acceptance:
-- Every group member can view every member's individual calendar.
-- Individual calendar view includes member name and setup status.
-- Pending member is labelled as not configured, not as having zero preferences.
-- All calendars are displayed in the viewer's timezone.
-- A member's own calendar is visually distinguished.
+## 5. Calendar editor
+- Week columns/days: Monday through Sunday.
+- Vertical time axis: 00:00 through 24:00.
+- Cell size: 30 minutes.
+- Selected cells use the member's stable group color (or a strong selected treatment in own editor).
+- Tap/click toggles one cell.
+- Pointer drag paints or erases a continuous interval based on the initial cell state.
+- Provide clear/reset action.
+- Save and discard actions are explicit.
+- Warn on unsaved navigation.
+- Mobile: preserve vertical scrolling; do not require drag for basic editing.
 
-## Timetable
-Acceptance:
-- Combined view shows member colors and legend.
-- Each view includes the upcoming Monday–Sunday reference-week dates in viewer timezone.
-- Timezone conversion is performed by backend shared logic.
-- PNG matches the interactive timetable for the same group, viewer timezone and reference week.
-- PNG includes group name, date range, generation timestamp, legend and pending setup indicators.
+## 6. Viewing individual calendars
+From the member list or timetable, select a member to open their individual calendar. All members can view all individual calendars. Display member name, stable color, setup status, and reference week. Read-only for other members.
 
-## Best time
-Acceptance:
-- Rank slots by count of completed members who prefer the corresponding actual interval in the reference week.
-- Pending members are excluded.
-- Completed members with zero preferences count as configured but add no votes.
-- Merge adjacent equal-score intervals for readability.
-- Label output as preferences, not confirmed availability.
+## 7. Combined timetable
+Show all members' preferences using their stable colors. Include a legend, pending setup state and reference-week date range. Display times in the viewer's selected timezone. The view must make it clear that blank space is not proof of unavailability.
 
-## Membership and ownership
-Acceptance:
-- `/members` lists owner first, then other members, including setup status.
-- Provide a clickable Telegram link only when a valid username or supported safe link is available; never construct links from database IDs.
-- Regular member can leave after confirmation.
-- Leaving removes only membership-scoped preferences for that group.
-- Owner cannot leave while owner.
-- Owner can transfer ownership to an existing member after confirmation.
-- Former owner remains a member after transfer.
-- New owner receives subsequent owner notifications.
-- Owner can delete group after explicit confirmation; group-specific dependent data is deleted by cascade.
+## 8. Best-time output
+Display ranked intervals with count, for example:
+- «Понедельник, 19:00–20:30 · предпочитают 5 участников».
+Use wording equivalent to “preferred by”, never “available”. Explain that unconfigured members are excluded.
 
-## Reliability and security
-Acceptance:
-- Mini App requests are authenticated using validated Telegram `initData`.
-- Client-supplied Telegram user IDs are never trusted.
-- All group operations enforce membership and role checks on the backend.
-- Domain writes use transactions and database constraints for invariants.
-- Telegram notification failures do not undo successful domain writes.
-- Secrets and raw authentication data are not logged.
+## 9. Ownership transfer
+1. Owner invokes `/transfer`.
+2. Show existing members except current owner.
+3. Owner selects target and confirms.
+4. Backend revalidates owner and target membership in a transaction.
+5. Update owner; old owner remains member.
+6. Notify new owner best-effort.
+
+## 10. Leave and delete
+- Regular member: `/leave`, show group name and confirmation; on confirm remove membership and scoped preferences; notify owner.
+- Owner: cannot leave while owner. Offer transfer ownership or delete group.
+- Delete: owner-only confirmation that clearly states all group data will be deleted. Capture member Telegram IDs before cascade deletion, then best-effort notify them.
+
+## 11. Visual design
+Use Vuetify components and a consistent design system. Avoid generic unstyled scaffolding. Prioritize a polished compact mobile-first Mini App. Use accessible contrast, clear selected/unselected states, touch targets, loading/error/empty states and Russian copy. Do not overload the weekly grid with decorative elements.

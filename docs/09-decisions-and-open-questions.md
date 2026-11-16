@@ -1,92 +1,201 @@
-# 08. Implementation Plan
+# 09. Decisions and Open Questions
 
-Build vertical slices. Keep the application runnable at the end of each phase. Do not generate the entire codebase in one unreviewed pass.
+## 1. Purpose and precedence
 
-## Phase 0: Repository and tooling
-- Create Rust backend and Vue 3 + Vite + TypeScript + Vuetify frontend.
-- Add formatting/linting and basic CI checks if desired.
-- Add configuration loading and `.env.example`.
-- Add `.gitignore` for `.env`, `data/`, SQLite database and WAL/SHM files.
-- Create `data/` automatically at runtime.
-- Establish a health endpoint and structured logging.
+This document records decisions that are binding for the MVP but are not fully
+obvious from a single requirements page. It also lists questions that are still
+open and features that are explicitly deferred.
 
-Acceptance: frontend builds; backend starts; health endpoint responds; local SQLite file is created under `data/`; database is not tracked by Git.
+Rules:
+- A **locked** decision may only be changed by the product owner.
+- If another document contradicts a locked decision, this document wins for the
+  specific point and the other document should be corrected.
+- If a requirement is neither specified elsewhere nor listed here as open or
+  deferred, stop and ask the product owner. Do not invent behavior.
+- Dates use ISO `YYYY-MM-DD`.
 
-## Phase 1: SQLite and domain foundation
-- Add SQLx and migrations.
-- Configure SQLite foreign keys, WAL and busy timeout.
-- Implement users, groups, memberships, preferences and invitations tables.
-- Implement service layer and transaction helpers.
-- Add tests for constraints and cascades.
+## 2. Locked product decisions
 
-Acceptance: migrations run on clean DB; group membership uniqueness and 20-member cap are tested; deleting membership only removes that group's preferences.
+### 2.1 Preference semantics
+- A selected slot means **preferred**.
+- An unselected slot means **no stated preference**, never "unavailable" or
+  "busy". Blank timetable space is not proof of unavailability.
+- `setup_pending` means `setup_completed_at IS NULL` (no successful save yet).
+- `setup_completed` means at least one save succeeded, including a save with
+  **zero** intervals. Empty means "intentionally no preferred times".
+- Pending members are excluded from best-time counts and denominators.
+  Completed members with zero intervals count as configured and contribute zero
+  preferences.
+- Best-time output is a preference ranking, never confirmed availability or an
+  automatic booking recommendation.
 
-## Phase 2: Telegram bot and identity
-- Implement bot startup and `/start`.
-- Implement user upsert from Telegram bot updates.
-- Implement `/create`, `/groups`, `/help` and group selection.
-- Add group creation flow and creator-as-first-member behavior.
+### 2.2 Calendar model
+- Recurring weekly calendar, Monday through Sunday.
+- 48 half-hour slots per day, 336 slots per week.
+- Preferences are local `weekday` (Monday = 1 … Sunday = 7) plus minute
+  boundaries, half-open `[start, end)`.
+- Boundaries are multiples of 30 minutes; `0 <= start_minute <= 1439`,
+  `1 <= end_minute <= 1440`, `start_minute < end_minute`.
+- Intervals for the same group, member and weekday must not overlap. Adjacent
+  intervals are allowed and the UI may merge them for display.
+- Saving replaces all intervals for the authenticated member in the active group.
 
-Acceptance: user can start bot, create group, and list/select their groups.
+### 2.3 Timezones and the reference week
+- Each user selects one IANA timezone explicitly on first calendar opening. The
+  UI may suggest the device timezone but must not save it without confirmation.
+- The same timezone governs both interpretation of the user's recurring local
+  preferences and display of schedules to that user.
+- Changing the timezone changes interpretation and display together; the user
+  must be warned before changing it.
+- No calendar, ranking or PNG view may silently fall back to the server timezone.
+- Store IANA identifiers (for example `Asia/Tbilisi`), never fixed UTC offsets,
+  and never store recurring preferences as UTC timestamps.
+- The reference week is the upcoming Monday–Sunday in the **viewer's** timezone.
+  If the current local day is Monday, the week starts today (current week, not
+  next week).
+- Each member's recurring local intervals are expanded into actual instants for
+  that reference week using IANA rules, then converted to the viewer's timezone.
+  Raw weekday/minute values must never be compared across timezones for ranking.
+- One shared backend conversion module serves the interactive API, `/besttime`
+  and PNG rendering. The bot and Mini App must not implement separate rules.
+- Show the reference-week date range wherever a timetable or ranking is shown.
+- Use a maintained library (`chrono-tz` with `chrono`); do not build a timezone
+  engine.
 
-## Phase 3: Invitations and lifecycle
-- Implement secure invitation creation, preview and explicit join confirmation.
-- Implement revoke/expiration.
-- Implement `/members`, `/leave`, `/transfer`, `/delete` and rename.
-- Implement best-effort owner notifications.
+### 2.4 Groups, roles and membership
+- Maximum 20 members per group, including the owner.
+- The creator becomes owner and first member in one transaction.
+- Roles are only `owner` and `member`.
+- The owner cannot leave while still owner. They must transfer ownership to an
+  existing member or delete the group.
+- Ownership transfer keeps the previous owner as a regular member.
+- There is exactly one owner per group, consistent between the group record and
+  membership roles.
+- Owner capabilities: rename group, manage invitations, transfer ownership,
+  delete group, view all schedules.
+- Member capabilities: edit own preferences, view all group calendars, leave.
+- Every member can view every member's individual calendar; other members'
+  calendars are read-only and the viewer's own calendar is visually distinct.
+- Each membership has a stable color within that group.
+- Preferences are scoped per group. Leaving group A must not affect group B.
+  The user profile survives leaving a group.
 
-Acceptance: lifecycle acceptance criteria pass, including race-safe capacity, transfer, leave restrictions and deletion cascades.
+### 2.5 Invitations
+- Invitation links use Telegram deep linking:
+  `https://t.me/<BOT_USERNAME>?start=join_<TOKEN>`.
+- Opening a link shows a read-only preview and never creates membership.
+- The user must press an explicit Russian confirmation action to join.
+- Confirmation revalidates, inside the join transaction: token hash, expiry,
+  revocation, group existence, capacity and existing membership.
+- Joining is idempotent; repeated confirmation never creates duplicates.
+- Tokens have at least 128 bits of entropy (256 bits by default), are URL-safe
+  opaque values, and only a cryptographic hash is stored.
+- Invitations support revocation and optional expiration.
 
-## Phase 4: Mini App authentication and timezone setup
-- Integrate Telegram Web Apps SDK.
-- Validate `initData` server-side.
-- Add authenticated API session/context.
-- Build Vuetify shell and timezone selection screen.
-- Persist IANA timezone; require explicit confirmation on first calendar visit.
+### 2.6 Notifications
+- Owner notifications are best effort: new member joined, member left, member
+  saved changed preferences.
+- A failed notification must never roll back a successful domain write.
+- Telegram bots cannot start private chats with users who never started the bot.
+  The limitation is explained to users and delivery failures are logged safely.
+- After ownership transfer, subsequent owner notifications target the new owner.
 
-Acceptance: tampered/stale initData rejected; client-supplied user ID cannot impersonate another user; calendar is blocked until timezone set.
+### 2.7 Localization
+- All user-facing bot text, buttons, notifications and Mini App text are Russian.
+- Telegram command identifiers stay English: `/create`, `/groups`, `/invite`,
+  `/calendar`, `/timetable`, `/besttime`, `/members`, `/leave`, `/transfer`,
+  `/delete`, `/help`.
+- User-facing strings are centralized (bot message module and frontend
+  `src/i18n/ru.ts`), not scattered through handlers or components.
 
-## Phase 5: Preference calendar editor
-- Build Monday–Sunday, 30-minute grid.
-- Implement click toggle and drag range selection.
-- Implement clear, save, discard and unsaved-change warning.
-- Implement backend interval validation and transactional replacement.
-- Distinguish pending from completed-empty.
+### 2.8 Data, persistence and operations
+- The SQLite database lives at project-local `data/app.db`.
+- The database must stay on a local filesystem, never a network share.
+- `data/`, `.env`, `*.db`, `*.db-wal` and `*.db-shm` are ignored by Git.
+- Startup, migration and deployment must never delete or recreate the database.
+- **No automated database backups exist in the MVP.** Losing `data/app.db` means
+  permanent data loss. Git does not protect the database.
+- Run one backend instance for the MVP.
 
-Acceptance: all preference validation and setup-state tests pass; mobile scroll and touch interactions work.
+### 2.9 Security
+- Validate Telegram Mini App `initData` server-side (signature and freshness);
+  never trust `initDataUnsafe` or a client-supplied Telegram user ID.
+- Serialize Telegram IDs as strings in JSON/JavaScript to avoid precision loss.
+- Enforce membership and owner checks on every backend route.
+- Use transactions for join/capacity, preference replacement, ownership
+  transfer and deletion-related state changes.
+- Keep secrets in environment variables; never log the bot token, raw
+  `initData`, raw invitation tokens or session secrets.
+- Use parameterized SQL, validate all input on the backend, set request size
+  limits, and serve the Mini App over HTTPS in production.
 
-## Phase 6: Timezone conversion and read views
-- Implement shared reference-week calculation.
-- Implement timezone conversion service using IANA rules.
-- Build combined timetable and individual member calendar view.
-- All members can inspect all member calendars in viewer timezone.
-- Add DST policy tests.
+## 3. Locked technical decisions
 
-Acceptance: different viewer timezones see equivalent actual instants at corresponding local times; week boundaries are correct; API and UI use same conversion data.
+| Area | Decision | Date |
+|---|---|---|
+| Backend | Rust, one process serving Telegram updates and HTTP API | 2026-11-16 |
+| Bot | `teloxide`, long polling initially (webhook may be added later) | 2026-11-16 |
+| HTTP | `axum` | 2026-11-16 |
+| Database | SQLite via `SQLx`, WAL, foreign keys on every connection, busy timeout 5 s, `synchronous=NORMAL`, bounded pool (1–16, default 5), short write transactions | 2026-11-16 |
+| Frontend | Vue 3 + Vite + TypeScript + **Vuetify 4.x**; no Nuxt SSR, no other component library | 2026-11-16 |
+| Timezones | `chrono` + `chrono-tz` | 2026-11-16 |
+| PNG | Backend SVG view model converted with `resvg` | 2026-11-16 |
+| Process topology | One backend process; static Vite build served by Axum with SPA fallback | 2026-11-16 |
+| Configuration | Environment variables, optional `.env`; defaults: `127.0.0.1:8080`, `data/app.db`, `frontend/dist`, pool 5 | 2026-11-16 |
+| Logging | `tracing` + `EnvFilter`; optional `LOG_FORMAT=json`; no secrets in logs | 2026-11-16 |
+| Health | `GET /health`: `200` when usable, `503` when the database fails or times out (2 s); JSON with service/version, no internals | 2026-11-16 |
+| Storage | Internal primary keys are positive `INTEGER`; timestamps are UTC milliseconds since the Unix epoch | 2026-11-16 |
+| Migrations | Embedded SQLx migrations, forward-only, applied automatically at startup; existing data is never recreated | 2026-11-16 |
+| Write transactions | `BEGIN IMMEDIATE` and short transactions; group creation and membership joins are transactional | 2026-11-16 |
+| Database invariants | Triggers enforce the 20-member cap and non-overlapping preferences in addition to service checks | 2026-11-16 |
+| Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
+| Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
+| Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
 
-## Phase 7: Best-time and PNG
-- Implement preference ranking using converted reference-week slots.
-- Merge adjacent equal-score slots for presentation.
-- Generate SVG and convert to PNG.
-- Ensure image uses same timetable view model as interactive UI.
+### 3.1 DST conversion policy
 
-Acceptance: pending members excluded; completed-empty members handled correctly; PNG includes required labels and matches API result.
+The policy is library-based and deterministic. It is applied to both interval
+boundaries, and it is identical for the API, `/besttime` and PNG rendering.
 
-## Phase 8: Polish and deployment
-- Complete Russian copy and empty/loading/error states.
-- Add group cap and permission UX.
-- Configure HTTPS deployment and persistent project-local data volume.
-- Document that automated backups are not included and data loss may be permanent.
-- Test restart and migration behavior without replacing database.
+- **Ambiguous local time** (fall-back, the wall clock repeats): choose the
+  **earlier UTC offset**, i.e. the first occurrence.
+- **Nonexistent local time** (spring-forward gap): advance the wall-clock value
+  by the size of the gap. This preserves interval duration. Example under a
+  one-hour gap: `02:30` resolves to `03:30`; an interval `[02:00, 03:00)`
+  resolves to `[03:00, 04:00)`.
+- Normal times use the library's ordinary IANA resolution.
+- Tests must cover representative zones and both transitions (for example
+  `Europe/Berlin` and a zone with a non-one-hour or differently timed change)
+  before Phase 6 is considered done.
 
-Acceptance: clean deployment instructions work; restart preserves DB; secrets/data are not committed; Mini App opens in Telegram over HTTPS.
+## 4. Open questions
 
-## Testing priorities
-1. Timezone conversion, upcoming Monday logic and DST boundaries.
-2. Invitation replay, expiry, revocation and simultaneous joins at capacity.
-3. Ownership transfer and owner-leave restrictions.
-4. Preference replacement, empty save, overlap and interval bounds.
-5. Group-scoped preference cascade.
-6. Mini App authentication and authorization.
-7. PNG/interactive timetable consistency.
-8. Notification failure does not roll back writes.
+These are not locked; do not silently pick permanent behavior. Interim choices
+are implementation details that are cheap to change and must be revisited before
+the related phase is marked done.
+
+| # | Question | Target phase | Interim behavior |
+|---|---|---|---|
+| 1 | Should the Mini App exchange `initData` for a short-lived session token/cookie, or send validated `initData` on every request? | 4 | Both are allowed by the API contract; identity always derives from validated server-side auth |
+| 2 | Exact rate limits and mechanism for invitation preview/join and PNG generation | 7–8 | Request size limits and short transactions; single instance |
+| 3 | Exact 20-color palette and assignment rule for stable member colors | 1 | Deterministic distinct palette assigned on join; proposal, confirm before polish |
+| 4 | Group primary key type: integer or UUID | 1 | Integer primary key implemented in migration `0001`; changing it requires a migration |
+| 5 | Notification retry policy | post-MVP | Log failures only; never retry within the request |
+| 6 | Whether percentages are displayed anywhere | 5–7 | Optional; if shown, denominator = completed members |
+| 7 | Cleanup of expired/revoked invitation rows | post-MVP | Keep rows; validation rejects them |
+| 8 | Deployment target: Docker Compose or systemd | 8 | Both acceptable per architecture; document the chosen one |
+
+## 5. Explicitly out of scope
+
+No WoW API integration, character or role management, dungeon readiness checks,
+automatic event booking, attendance tracking, reminders, recurring event
+creation, hard-unavailable/busy slots, moderator roles, calendar integrations,
+historical analytics, PostgreSQL, Redis, message brokers, microservices,
+Kubernetes, Nuxt SSR, or **automated database backups**.
+
+## 6. Change log
+
+| Date | Change |
+|---|---|
+| 2026-11-16 | Repaired documentation numbering (files were offset by one and `02` duplicated `01`). Created this decisions document. Locked Vuetify 4.x, group name length 1–64, and the DST policy above. |
+| 2026-11-16 | Phase 1: added the initial SQLite schema (`users`, `groups`, `group_members`, `weekly_preferences`, `invitations`), domain types, transactional group/membership services, and migration/constraint/cascade tests. Recorded storage, migration and transaction decisions above. |

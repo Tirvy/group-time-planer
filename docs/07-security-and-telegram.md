@@ -1,90 +1,61 @@
-# 06. Mini App API Contract
+# 07. Security and Telegram Integration
 
-The exact route names may be refined during implementation, but behavior and authorization requirements are binding. All endpoints return JSON. Use consistent error envelopes and never trust user IDs from request bodies.
+## 1. Mini App authentication
+- Frontend must send Telegram Web App `initData` to backend.
+- Backend validates the Telegram Web Apps signature using the bot token and Telegram's documented algorithm.
+- Validate `auth_date` freshness with a configurable short acceptance window and reject stale data.
+- Do not trust `initDataUnsafe` as proof of identity.
+- Do not accept a Telegram user ID from frontend request bodies as identity.
+- Do not log raw `initData`, bot token, session secrets or invitation tokens.
+- Telegram IDs must be handled without JavaScript number precision loss; serialize as strings.
+- If issuing app sessions, use secure, HttpOnly cookies where deployment allows, or carefully managed short-lived bearer tokens. Protect state-changing cookie-authenticated requests against CSRF.
 
-## 1. Authentication
-Mini App sends Telegram `initData` to the backend, preferably via an `Authorization` header or dedicated exchange endpoint. Backend validates Telegram signature and freshness, resolves/creates the user, and issues a short-lived application session if desired. Every protected route derives user identity from validated server-side auth context.
+## 2. Bot token and configuration
+- Store bot token and secrets in environment variables.
+- Commit `.env.example` with placeholder values only.
+- Ignore `.env`.
+- Never print secrets in startup logs or error messages.
+- Rotate token if exposed.
 
-## 2. Suggested endpoints
+## 3. Invitation security
+- Generate at least 128 bits of cryptographic randomness; 256 bits recommended.
+- Encode token URL-safely.
+- Store only a cryptographic hash of token.
+- Compare hashes safely and avoid token leakage in logs/analytics.
+- Support revocation and expiration.
+- Preview is read-only.
+- Revalidate token and capacity at join confirmation.
+- Bind confirmation to authenticated Telegram user; do not let callback data specify arbitrary user identity.
+- Join transaction must be idempotent and enforce max 20 members.
 
-### `POST /api/auth/telegram`
-Request: `{ "initData": "..." }`
-Response: authenticated user summary, timezone state, and session token/cookie if implementing a session exchange.
+## 4. Authorization
+- Backend enforces membership and ownership on every operation.
+- Hiding buttons in frontend is not authorization.
+- Only authenticated member can view group data.
+- Only authenticated user can edit their own preferences.
+- Owner-only actions must check current database owner, not stale client role.
+- Transfer and deletion must be transactional and revalidated.
 
-### `GET /api/me`
-Returns current user profile, timezone and timezone-setup status.
+## 5. Telegram notification limitations
+A bot cannot initiate a private conversation with a user who has never started the bot. Notifications are best effort:
+- Domain action succeeds independently of notification delivery.
+- Failed delivery is logged safely and may be retried only if a simple retry mechanism is added.
+- Do not roll back join/leave/save/transfer/delete because a notification failed.
+- Explain to users that they may need to start the bot to receive private notifications.
+- After ownership transfer, notify and target the new owner for subsequent events.
 
-### `PUT /api/me/timezone`
-Request: `{ "timezone": "Asia/Tbilisi" }`
-Validate against IANA timezone database. Persist on user profile. The same timezone governs preference interpretation and timetable display.
+## 6. Web and deployment security
+- Telegram Mini App must be served over HTTPS.
+- Configure trusted origins/CORS narrowly.
+- Set request body and upload/render limits.
+- Rate-limit invitation preview/join and expensive timetable generation as appropriate.
+- Use parameterized SQL / SQLx; never interpolate user input into SQL.
+- Validate group names, timezone identifiers, intervals and route IDs.
+- Do not expose SQLite file or project data directory through static file serving.
 
-### `GET /api/groups`
-Returns groups for authenticated user, role, member count, own setup status and group metadata.
-
-### `GET /api/groups/{group_id}`
-Requires membership. Returns group summary and members, subject to product visibility rules.
-
-### `GET /api/groups/{group_id}/calendar`
-Requires membership and configured user timezone. Returns upcoming Monday–Sunday reference week, viewer timezone, member summaries, and converted interval/cell data for all members. Include each member's setup status and stable color. Other members' calendars are read-only.
-
-### `GET /api/groups/{group_id}/members/{user_id}/calendar`
-Requires membership in group; target must be current member. Returns that member's preferences converted into viewer timezone and setup state.
-
-### `PUT /api/groups/{group_id}/preferences`
-Requires membership and configured timezone. Request contains local recurring intervals, e.g. `{ "intervals": [{"weekday":1,"start_minute":1080,"end_minute":1200}] }`. Backend always saves for authenticated user, never a user ID supplied by client. Validate, normalize and replace atomically. Empty list is valid and marks setup completed.
-
-### `GET /api/groups/{group_id}/best-time`
-Requires membership and configured timezone. Returns ranked preferred intervals for the upcoming reference week, converted to viewer timezone. Include count and configured-member count; label as preferences, not availability.
-
-### `GET /api/groups/{group_id}/timetable.png`
-Requires membership and configured timezone. Returns PNG generated from same timetable view model used by interactive calendar. Optionally support an endpoint returning SVG for debugging, but do not expose unnecessary formats by default.
-
-### `POST /api/groups/{group_id}/invitations`
-Owner only. Creates invitation with random token, stores hash, returns deep link once. Do not return stored hash.
-
-### `POST /api/invitations/{token}/preview`
-Validates token and returns preview only; must not join.
-
-### `POST /api/invitations/{token}/join`
-Authenticated Telegram user only. Revalidate invitation, group existence, capacity and existing membership inside transaction. Idempotent for existing member.
-
-### `DELETE /api/groups/{group_id}/invitations/{invitation_id}`
-Owner only; revoke invitation.
-
-### `POST /api/groups/{group_id}/transfer-ownership`
-Owner only. Request target member ID. Transactionally verify target is existing member and transfer ownership. Former owner remains member.
-
-### `POST /api/groups/{group_id}/leave`
-Member only, except current owner. Remove membership and scoped preferences. Owner must transfer or delete.
-
-### `DELETE /api/groups/{group_id}`
-Owner only. Explicit confirmation at UI level; backend rechecks owner.
-
-### `PATCH /api/groups/{group_id}`
-Owner only; rename group.
-
-## 3. Response conventions
-- Use stable machine-readable error codes, e.g. `AUTH_INVALID`, `TIMEZONE_REQUIRED`, `NOT_A_MEMBER`, `NOT_OWNER`, `GROUP_FULL`, `INVITATION_INVALID`, `INVITATION_EXPIRED`, `OWNER_CANNOT_LEAVE`, `VALIDATION_ERROR`.
-- Include Russian-friendly message text or map error codes to centralized Russian frontend strings.
-- Telegram IDs should be strings in JSON.
-- Times in preference input are local recurring weekday/minute values, not UTC timestamps.
-- Converted calendar response should include explicit reference week start/end and viewer timezone.
-
-## 4. Authorization matrix
-| Operation | Any authenticated user | Member | Owner |
-|---|---:|---:|---:|
-| List own groups | Yes | — | — |
-| View group / members / calendars | No | Yes | Yes |
-| Edit own preferences | No | Yes | Yes |
-| Create invitation | No | No | Yes |
-| Rename group | No | No | Yes |
-| Transfer ownership | No | No | Yes |
-| Delete group | No | No | Yes |
-| Leave group | No | Yes, unless owner | Owner must transfer first |
-
-## 5. API design cautions
-- Never accept `user_id` as authority for whose preferences are being edited.
-- Check membership on every group-scoped route.
-- Revalidate state inside transactions for race-prone actions.
-- Avoid leaking group/member data to non-members through error messages.
-- Apply request size limits and sensible rate limits, especially to invitation endpoints and image rendering.
+## 7. Data minimization and logs
+- Store only data required for product behavior.
+- Usernames and names are mutable display metadata, not identity.
+- Avoid logging full calendars or personal data unnecessarily.
+- Logs should include correlation IDs, action types and safe error categories.
+- Do not log bot token, Telegram initData, invitation raw token or session credentials.
