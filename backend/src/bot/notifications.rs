@@ -13,7 +13,7 @@ use crate::{
     services::groups,
 };
 
-use super::texts;
+use super::{SafeMessaging, texts};
 
 const DELIVERY_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -89,7 +89,7 @@ async fn notify_owner(bot: &Bot, pool: &SqlitePool, group_id: GroupId, text: Str
 
 async fn send(bot: &Bot, telegram_id: TelegramId, text: String) {
     let chat = ChatId(telegram_id.get());
-    match tokio::time::timeout(DELIVERY_TIMEOUT, bot.send_message(chat, text)).await {
+    match tokio::time::timeout(DELIVERY_TIMEOUT, bot.send_text(chat, text)).await {
         Ok(Ok(_)) => {}
         Ok(Err(_)) => {
             tracing::warn!("Telegram notification delivery failed");

@@ -170,6 +170,7 @@ Rules:
 | PNG fonts | System fonts are loaded through `fontdb`; deployment hosts must provide Cyrillic-capable fonts | 2026-11-16 |
 | Deployment | Docker Compose runs the backend plus Caddy for automatic HTTPS; `./data` is bind-mounted and the process runs as UID 10001 | 2026-11-16 |
 | Bot calendar link | `PUBLIC_BASE_URL` is a validated HTTPS origin used by the `/calendar` Web App button; the Mini App preselects the `group` query parameter after membership checks | 2026-11-16 |
+| Link previews | Disabled for all bot text messages via `link_preview_options`; group names are user-controlled and may contain URLs that must not become embeds | 2026-11-16 |
 | CI | GitHub Actions runs Rust formatting, clippy and tests plus frontend tests and build | 2026-11-16 |
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
@@ -230,3 +231,5 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 | 2026-11-16 | Phase 6: added the shared reference-week and timezone conversion service with the documented DST policy, combined and individual calendar APIs, converted viewer-timezone read views, and DST/reference-week tests. |
 | 2026-11-16 | Phase 7: added best-time ranking over converted intervals, adjacent equal-score merging, `/besttime` and `/timetable` bot commands, the Mini App best-time view and PNG download, and `resvg`-rendered PNG timetables from the shared calendar model. |
 | 2026-11-16 | Phase 8: added the `/calendar` Web App entry point, `PUBLIC_BASE_URL` configuration, Docker/Caddy deployment with persistent data, CI, Russian-copy cleanup, and deployment/no-backup documentation. |
+| 2026-11-16 | Group creation now returns a reusable invitation deep link immediately; if the link cannot be built, group creation still succeeds and suggests `/invite`. |
+| 2026-11-16 | Disabled Telegram link previews for every bot text message and notification so user-controlled group names cannot embed external media. |

@@ -14,10 +14,13 @@ use teloxide::{
     RequestError,
     dispatching::UpdateHandler,
     dptree,
+    payloads::{EditMessageText, SendMessage},
     prelude::*,
+    requests::JsonRequest,
     types::{
         BotCommand, CallbackQuery, CallbackQueryId, ChatId, ForceReply, InlineKeyboardButton,
-        InlineKeyboardMarkup, InputFile, Message, MessageId, User as TelegramUser, WebAppInfo,
+        InlineKeyboardMarkup, InputFile, LinkPreviewOptions, Message, MessageId,
+        User as TelegramUser, WebAppInfo,
     },
     utils::command::BotCommands,
 };
@@ -74,6 +77,45 @@ enum Command {
 #[derive(Debug, Clone)]
 pub struct BotSettings {
     pub public_base_url: Option<String>,
+}
+
+/// Bot messages frequently contain user-controlled group names, including URLs.
+/// Telegram must never turn those names into link previews or media embeds.
+fn disabled_link_preview() -> LinkPreviewOptions {
+    LinkPreviewOptions {
+        is_disabled: true,
+        url: None,
+        prefer_small_media: false,
+        prefer_large_media: false,
+        show_above_text: false,
+    }
+}
+
+trait SafeMessaging {
+    fn send_text(&self, chat: ChatId, text: impl Into<String>) -> JsonRequest<SendMessage>;
+    fn edit_text(
+        &self,
+        chat: ChatId,
+        message_id: MessageId,
+        text: impl Into<String>,
+    ) -> JsonRequest<EditMessageText>;
+}
+
+impl SafeMessaging for Bot {
+    fn send_text(&self, chat: ChatId, text: impl Into<String>) -> JsonRequest<SendMessage> {
+        self.send_message(chat, text)
+            .link_preview_options(disabled_link_preview())
+    }
+
+    fn edit_text(
+        &self,
+        chat: ChatId,
+        message_id: MessageId,
+        text: impl Into<String>,
+    ) -> JsonRequest<EditMessageText> {
+        self.edit_message_text(chat, message_id, text)
+            .link_preview_options(disabled_link_preview())
+    }
 }
 
 /// Runs long polling until the dispatcher stops.
@@ -160,7 +202,7 @@ async fn handle_command(
         Ok(user) => user,
         Err(error) => {
             tracing::error!(error = %error, "failed to upsert Telegram user");
-            bot.send_message(chat, texts::PROFILE_ERROR).await?;
+            bot.send_text(chat, texts::PROFILE_ERROR).await?;
             return Ok(());
         }
     };
@@ -175,16 +217,16 @@ async fn handle_command(
                 send_invitation_preview(&bot, chat, &pool, user.id, &token).await?;
             }
             StartPayload::InvalidJoin => {
-                bot.send_message(chat, texts::INVALID_INVITATION).await?;
+                bot.send_text(chat, texts::INVALID_INVITATION).await?;
             }
             StartPayload::None => {
-                bot.send_message(chat, texts::start(&texts::display_name(&user)))
+                bot.send_text(chat, texts::start(&texts::display_name(&user)))
                     .reply_markup(keyboards::main_menu())
                     .await?;
             }
         },
         Command::Help => {
-            bot.send_message(chat, texts::help())
+            bot.send_text(chat, texts::help())
                 .reply_markup(keyboards::main_menu())
                 .await?;
         }
@@ -224,7 +266,7 @@ async fn handle_command(
 }
 
 async fn handle_unknown_command(bot: Bot, message: Message) -> Result<(), RequestError> {
-    bot.send_message(message.chat.id, texts::UNKNOWN_COMMAND)
+    bot.send_text(message.chat.id, texts::UNKNOWN_COMMAND)
         .await?;
     Ok(())
 }
@@ -244,7 +286,7 @@ async fn handle_text(
         Ok(user) => user,
         Err(error) => {
             tracing::error!(error = %error, "failed to upsert Telegram user");
-            bot.send_message(chat, texts::PROFILE_ERROR).await?;
+            bot.send_text(chat, texts::PROFILE_ERROR).await?;
             return Ok(());
         }
     };
@@ -252,7 +294,7 @@ async fn handle_text(
     match sessions.creation_state(user.id, Instant::now()) {
         CreationState::NotStarted => {}
         CreationState::Expired => {
-            bot.send_message(chat, texts::CREATE_EXPIRED).await?;
+            bot.send_text(chat, texts::CREATE_EXPIRED).await?;
         }
         CreationState::Awaiting => {
             let Some(raw_name) = message.text() else {
@@ -262,7 +304,7 @@ async fn handle_text(
             let name = match GroupName::parse(raw_name) {
                 Ok(name) => name,
                 Err(error) => {
-                    bot.send_message(chat, texts::name_error(&error)).await?;
+                    bot.send_text(chat, texts::name_error(&error)).await?;
                     return Ok(());
                 }
             };
@@ -272,7 +314,7 @@ async fn handle_text(
                 Ok(group) => {
                     sessions.set_active_group(user.id, group.id);
                     let invite_url = create_invite_url(&bot, &pool, user.id, group.id).await;
-                    bot.send_message(
+                    bot.send_text(
                         chat,
                         texts::group_created(name.as_str(), invite_url.as_deref()),
                     )
@@ -281,7 +323,7 @@ async fn handle_text(
                 }
                 Err(error) => {
                     tracing::error!(error = %error, "failed to create group");
-                    bot.send_message(chat, texts::CREATE_ERROR).await?;
+                    bot.send_text(chat, texts::CREATE_ERROR).await?;
                 }
             }
         }
@@ -332,7 +374,7 @@ async fn handle_callback(
         }
         CallbackAction::MenuHelp => {
             answer_silent(&bot, &query.id).await?;
-            bot.send_message(chat, texts::help())
+            bot.send_text(chat, texts::help())
                 .reply_markup(keyboards::main_menu())
                 .await?;
         }
@@ -359,7 +401,7 @@ async fn handle_callback(
         }
         CallbackAction::Cancel => {
             answer(&bot, &query.id, texts::CANCELED).await?;
-            bot.send_message(chat, texts::CANCELED)
+            bot.send_text(chat, texts::CANCELED)
                 .reply_markup(keyboards::main_menu())
                 .await?;
         }
@@ -379,7 +421,7 @@ async fn start_group_creation(
         BeginCreation::AlreadyPending => texts::CREATE_PROMPT_AGAIN,
     };
 
-    bot.send_message(chat, prompt)
+    bot.send_text(chat, prompt)
         .reply_markup(ForceReply::new().input_field_placeholder(Some("Название группы".to_owned())))
         .await?;
 
@@ -395,7 +437,7 @@ async fn send_groups(
 ) -> Result<(), RequestError> {
     match groups::list_for_user(pool, user).await {
         Ok(groups) if groups.is_empty() => {
-            bot.send_message(chat, texts::GROUPS_EMPTY)
+            bot.send_text(chat, texts::GROUPS_EMPTY)
                 .reply_markup(keyboards::groups_menu(&[]))
                 .await?;
         }
@@ -407,13 +449,13 @@ async fn send_groups(
                 body.push_str(&texts::group_line(group, Some(group.id) == active));
             }
 
-            bot.send_message(chat, body)
+            bot.send_text(chat, body)
                 .reply_markup(keyboards::groups_menu(&groups))
                 .await?;
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to list groups");
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
 
@@ -425,7 +467,7 @@ async fn send_active_group(
     chat: ChatId,
     group: &GroupSummary,
 ) -> Result<(), RequestError> {
-    bot.send_message(chat, texts::group_details(group))
+    bot.send_text(chat, texts::group_details(group))
         .reply_markup(keyboards::main_menu())
         .await?;
     Ok(())
@@ -445,7 +487,7 @@ async fn resolve_group(
             Err(GroupError::NotAMember(_)) => sessions.clear_active_group(user),
             Err(error) => {
                 tracing::error!(error = %error, "failed to load active group");
-                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                bot.send_text(chat, texts::GENERIC_ERROR).await?;
                 return Ok(None);
             }
         }
@@ -453,7 +495,7 @@ async fn resolve_group(
 
     match groups::list_for_user(pool, user).await {
         Ok(groups) if groups.is_empty() => {
-            bot.send_message(chat, texts::GROUPS_EMPTY)
+            bot.send_text(chat, texts::GROUPS_EMPTY)
                 .reply_markup(keyboards::groups_menu(&[]))
                 .await?;
             Ok(None)
@@ -464,14 +506,14 @@ async fn resolve_group(
             Ok(Some(group))
         }
         Ok(groups) => {
-            bot.send_message(chat, texts::GROUP_PICK_PROMPT)
+            bot.send_text(chat, texts::GROUP_PICK_PROMPT)
                 .reply_markup(keyboards::groups_menu(&groups))
                 .await?;
             Ok(None)
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to list groups");
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
             Ok(None)
         }
     }
@@ -494,12 +536,12 @@ async fn select_group(
         }
         Err(GroupError::NotAMember(_)) => {
             answer_alert(bot, query_id, texts::GROUP_NOT_AVAILABLE).await?;
-            bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
+            bot.send_text(chat, texts::GROUP_NOT_AVAILABLE).await?;
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to load selected group");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -518,14 +560,14 @@ async fn send_calendar_link(
     };
 
     let Some(base_url) = settings.public_base_url.as_deref() else {
-        bot.send_message(chat, texts::MINI_APP_UNAVAILABLE).await?;
+        bot.send_text(chat, texts::MINI_APP_UNAVAILABLE).await?;
         return Ok(());
     };
 
     let mut url = match Url::parse(base_url) {
         Ok(url) => url,
         Err(_) => {
-            bot.send_message(chat, texts::MINI_APP_UNAVAILABLE).await?;
+            bot.send_text(chat, texts::MINI_APP_UNAVAILABLE).await?;
             return Ok(());
         }
     };
@@ -534,7 +576,7 @@ async fn send_calendar_link(
 
     let button = InlineKeyboardButton::web_app("Открыть календарь", WebAppInfo { url });
 
-    bot.send_message(chat, texts::calendar_link(group.name.as_str()))
+    bot.send_text(chat, texts::calendar_link(group.name.as_str()))
         .reply_markup(InlineKeyboardMarkup::new(vec![vec![button]]))
         .await?;
     Ok(())
@@ -584,19 +626,19 @@ async fn send_invitation(
         return Ok(());
     };
     if !group.is_owner() {
-        bot.send_message(chat, texts::NOT_OWNER).await?;
+        bot.send_text(chat, texts::NOT_OWNER).await?;
         return Ok(());
     }
 
     let me = match bot.get_me().await {
         Ok(me) => me,
         Err(_) => {
-            bot.send_message(chat, texts::INVITATION_LINK_ERROR).await?;
+            bot.send_text(chat, texts::INVITATION_LINK_ERROR).await?;
             return Ok(());
         }
     };
     let Some(username) = me.username.as_deref() else {
-        bot.send_message(chat, texts::INVITATION_LINK_ERROR).await?;
+        bot.send_text(chat, texts::INVITATION_LINK_ERROR).await?;
         return Ok(());
     };
 
@@ -606,16 +648,16 @@ async fn send_invitation(
                 "https://t.me/{username}?start={}",
                 created.token.start_payload()
             );
-            bot.send_message(chat, texts::invitation_link(group.name.as_str(), &url))
+            bot.send_text(chat, texts::invitation_link(group.name.as_str(), &url))
                 .reply_markup(keyboards::invitation_actions(created.id))
                 .await?;
         }
         Err(InvitationError::NotOwner(_)) => {
-            bot.send_message(chat, texts::NOT_OWNER).await?;
+            bot.send_text(chat, texts::NOT_OWNER).await?;
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to create invitation");
-            bot.send_message(chat, texts::INVITATION_ERROR).await?;
+            bot.send_text(chat, texts::INVITATION_ERROR).await?;
         }
     }
 
@@ -632,7 +674,7 @@ async fn send_invitation_preview(
     match invitations::preview(pool, token, viewer).await {
         Ok(preview) => {
             let can_join = !preview.is_member && !preview.is_full;
-            bot.send_message(chat, texts::invitation_preview(&preview))
+            bot.send_text(chat, texts::invitation_preview(&preview))
                 .reply_markup(keyboards::invitation_preview_actions(
                     token,
                     can_join,
@@ -643,11 +685,11 @@ async fn send_invitation_preview(
         Err(
             InvitationError::InvalidToken | InvitationError::Expired | InvitationError::Revoked,
         ) => {
-            bot.send_message(chat, texts::INVALID_INVITATION).await?;
+            bot.send_text(chat, texts::INVALID_INVITATION).await?;
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to load invitation preview");
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -669,7 +711,7 @@ async fn join_invitation(
         }) => {
             sessions.set_active_group(user.id, group_id);
             answer(bot, query_id, texts::JOINED_TOAST).await?;
-            bot.send_message(chat, texts::joined(&group_name))
+            bot.send_text(chat, texts::joined(&group_name))
                 .reply_markup(keyboards::main_menu())
                 .await?;
             notifications::joined(bot, pool, group_id, &group_name, &texts::display_name(user))
@@ -681,7 +723,7 @@ async fn join_invitation(
         }) => {
             sessions.set_active_group(user.id, group_id);
             answer(bot, query_id, texts::ALREADY_MEMBER_TOAST).await?;
-            bot.send_message(chat, texts::already_member(&group_name))
+            bot.send_text(chat, texts::already_member(&group_name))
                 .reply_markup(keyboards::main_menu())
                 .await?;
         }
@@ -696,7 +738,7 @@ async fn join_invitation(
         Err(error) => {
             tracing::error!(error = %error, "failed to join by invitation");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -717,14 +759,14 @@ async fn revoke_invitation(
             let text = texts::invitation_revoked(&group_name);
             if let Some(message_id) = message_id {
                 if bot
-                    .edit_message_text(chat, message_id, text.as_str())
+                    .edit_text(chat, message_id, text.as_str())
                     .await
                     .is_err()
                 {
-                    bot.send_message(chat, text).await?;
+                    bot.send_text(chat, text).await?;
                 }
             } else {
-                bot.send_message(chat, text).await?;
+                bot.send_text(chat, text).await?;
             }
         }
         Ok(RevokeOutcome::AlreadyRevoked { .. }) => {
@@ -739,7 +781,7 @@ async fn revoke_invitation(
         Err(error) => {
             tracing::error!(error = %error, "failed to revoke invitation");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -758,16 +800,16 @@ async fn send_members(
 
     match members::list_for_group(pool, user.id, group.id).await {
         Ok(list) => {
-            bot.send_message(chat, texts::members_list(&group, &list, user.id))
+            bot.send_text(chat, texts::members_list(&group, &list, user.id))
                 .reply_markup(keyboards::main_menu())
                 .await?;
         }
         Err(MembersError::NotAMember(_)) => {
-            bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
+            bot.send_text(chat, texts::GROUP_NOT_AVAILABLE).await?;
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to list members");
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -784,7 +826,7 @@ async fn send_best_time(
         return Ok(());
     };
     let Some(timezone) = user_timezone(user) else {
-        bot.send_message(chat, texts::TIMEZONE_REQUIRED).await?;
+        bot.send_text(chat, texts::TIMEZONE_REQUIRED).await?;
         return Ok(());
     };
 
@@ -794,7 +836,7 @@ async fn send_best_time(
             Ok(calendar) => calendar,
             Err(error) => {
                 tracing::error!(error = %error, "failed to build calendar for best time");
-                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                bot.send_text(chat, texts::GENERIC_ERROR).await?;
                 return Ok(());
             }
         };
@@ -803,12 +845,12 @@ async fn send_best_time(
         Ok(ranked) => ranked,
         Err(error) => {
             tracing::error!(error = %error, "failed to rank best time");
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
             return Ok(());
         }
     };
 
-    bot.send_message(chat, texts::best_time(&ranked))
+    bot.send_text(chat, texts::best_time(&ranked))
         .reply_markup(keyboards::main_menu())
         .await?;
     Ok(())
@@ -825,7 +867,7 @@ async fn send_timetable(
         return Ok(());
     };
     let Some(timezone) = user_timezone(user) else {
-        bot.send_message(chat, texts::TIMEZONE_REQUIRED).await?;
+        bot.send_text(chat, texts::TIMEZONE_REQUIRED).await?;
         return Ok(());
     };
 
@@ -835,7 +877,7 @@ async fn send_timetable(
             Ok(calendar) => calendar,
             Err(error) => {
                 tracing::error!(error = %error, "failed to build calendar for timetable");
-                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                bot.send_text(chat, texts::GENERIC_ERROR).await?;
                 return Ok(());
             }
         };
@@ -853,12 +895,12 @@ async fn send_timetable(
             Ok(Ok(png)) => png,
             Ok(Err(error)) => {
                 tracing::error!(error = %error, "failed to render timetable PNG");
-                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                bot.send_text(chat, texts::GENERIC_ERROR).await?;
                 return Ok(());
             }
             Err(error) => {
                 tracing::error!(error = %error, "timetable task failed");
-                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                bot.send_text(chat, texts::GENERIC_ERROR).await?;
                 return Ok(());
             }
         };
@@ -887,11 +929,11 @@ async fn request_leave(
         return Ok(());
     };
     if group.is_owner() {
-        bot.send_message(chat, texts::OWNER_CANNOT_LEAVE).await?;
+        bot.send_text(chat, texts::OWNER_CANNOT_LEAVE).await?;
         return Ok(());
     }
 
-    bot.send_message(chat, texts::leave_confirm(group.name.as_str()))
+    bot.send_text(chat, texts::leave_confirm(group.name.as_str()))
         .reply_markup(keyboards::leave_confirmation(group.id))
         .await?;
     Ok(())
@@ -912,7 +954,7 @@ async fn confirm_leave(
                 sessions.clear_active_group(user.id);
             }
             answer(bot, query_id, texts::LEFT_TOAST).await?;
-            bot.send_message(chat, texts::left(&left.group_name))
+            bot.send_text(chat, texts::left(&left.group_name))
                 .reply_markup(keyboards::main_menu())
                 .await?;
             notifications::left(
@@ -933,7 +975,7 @@ async fn confirm_leave(
         Err(error) => {
             tracing::error!(error = %error, "failed to leave group");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -950,7 +992,7 @@ async fn request_transfer(
         return Ok(());
     };
     if !group.is_owner() {
-        bot.send_message(chat, texts::NOT_OWNER).await?;
+        bot.send_text(chat, texts::NOT_OWNER).await?;
         return Ok(());
     }
 
@@ -961,19 +1003,19 @@ async fn request_transfer(
                 .filter(|member| !member.is_owner())
                 .collect();
             if targets.is_empty() {
-                bot.send_message(chat, texts::NO_TRANSFER_TARGETS).await?;
+                bot.send_text(chat, texts::NO_TRANSFER_TARGETS).await?;
                 return Ok(());
             }
-            bot.send_message(chat, texts::transfer_select(group.name.as_str()))
+            bot.send_text(chat, texts::transfer_select(group.name.as_str()))
                 .reply_markup(keyboards::transfer_selection(group.id, &targets))
                 .await?;
         }
         Err(MembersError::NotAMember(_)) => {
-            bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
+            bot.send_text(chat, texts::GROUP_NOT_AVAILABLE).await?;
         }
         Err(error) => {
             tracing::error!(error = %error, "failed to list transfer targets");
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -997,7 +1039,7 @@ async fn select_transfer(
         Err(error) => {
             tracing::error!(error = %error, "failed to load group for transfer");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
             return Ok(());
         }
     };
@@ -1017,7 +1059,7 @@ async fn select_transfer(
                 return Ok(());
             };
             answer_silent(bot, query_id).await?;
-            bot.send_message(
+            bot.send_text(
                 chat,
                 texts::transfer_confirm(
                     group_summary.name.as_str(),
@@ -1030,7 +1072,7 @@ async fn select_transfer(
         Err(error) => {
             tracing::error!(error = %error, "failed to load transfer target");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
 
@@ -1060,7 +1102,7 @@ async fn confirm_transfer(
                 })
                 .unwrap_or_else(|| "участник".to_owned());
 
-            bot.send_message(chat, texts::transferred(&transfer.group_name, &target_name))
+            bot.send_text(chat, texts::transferred(&transfer.group_name, &target_name))
                 .reply_markup(keyboards::main_menu())
                 .await?;
             notifications::new_owner(bot, pool, group, &transfer.group_name).await;
@@ -1077,7 +1119,7 @@ async fn confirm_transfer(
         Err(error) => {
             tracing::error!(error = %error, "failed to transfer ownership");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -1094,11 +1136,11 @@ async fn request_delete(
         return Ok(());
     };
     if !group.is_owner() {
-        bot.send_message(chat, texts::NOT_OWNER).await?;
+        bot.send_text(chat, texts::NOT_OWNER).await?;
         return Ok(());
     }
 
-    bot.send_message(chat, texts::delete_confirm(group.name.as_str()))
+    bot.send_text(chat, texts::delete_confirm(group.name.as_str()))
         .reply_markup(keyboards::delete_confirmation(group.id))
         .await?;
     Ok(())
@@ -1117,7 +1159,7 @@ async fn confirm_delete(
         Ok(deleted) => {
             sessions.clear_active_group(user.id);
             answer(bot, query_id, texts::DELETED_TOAST).await?;
-            bot.send_message(chat, texts::deleted(&deleted.group_name))
+            bot.send_text(chat, texts::deleted(&deleted.group_name))
                 .reply_markup(keyboards::main_menu())
                 .await?;
 
@@ -1134,7 +1176,7 @@ async fn confirm_delete(
         Err(error) => {
             tracing::error!(error = %error, "failed to delete group");
             answer_silent(bot, query_id).await?;
-            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
         }
     }
     Ok(())
@@ -1209,4 +1251,20 @@ async fn load_user(pool: &SqlitePool, telegram_user: &TelegramUser) -> Result<Us
     );
 
     Ok(users::upsert(pool, &profile).await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_name_messages_disable_link_previews() {
+        let options = disabled_link_preview();
+        assert!(options.is_disabled);
+        assert!(options.url.is_none());
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            serde_json::json!({ "is_disabled": true })
+        );
+    }
 }
