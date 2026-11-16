@@ -67,8 +67,10 @@ cd frontend && npm run typecheck && npm run build
 
 ### Telegram bot
 - Put the token from @BotFather into `TELOXIDE_TOKEN` in `.env` or the environment. Without a token the backend runs API-only and logs a warning.
-- Implemented commands: `/start`, `/create`, `/groups`, `/help`. All bot text is Russian; command identifiers are English.
+- Implemented commands: `/start`, `/create`, `/groups`, `/invite`, `/members`, `/leave`, `/transfer`, `/delete`, `/help`. All bot text is Russian; command identifiers are English.
 - `/create` asks for a group name in a guided step. `/groups` lists memberships and lets the user choose the active group.
+- `/invite` (owner only) creates a Telegram deep link. Opening the link shows a read-only preview; joining requires the explicit «Вступить в группу» button, and capacity/membership are revalidated at confirmation. The invitation message has a revoke button.
+- `/members` shows the owner first, then other members, with setup status. `/leave`, `/transfer` and `/delete` require confirmation and revalidate permissions server-side.
 - The active group and a pending "create" prompt are kept in memory for the single backend instance. After a restart the bot asks the user to choose again instead of relying on stale context.
 - The bot token is never logged; configuration redacts it in debug output.
 

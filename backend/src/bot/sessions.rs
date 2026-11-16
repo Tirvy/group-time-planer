@@ -89,6 +89,12 @@ impl BotSessions {
         self.lock().entry(user).or_default().active_group = Some(group);
     }
 
+    pub fn clear_active_group(&self, user: UserId) {
+        if let Some(session) = self.lock().get_mut(&user) {
+            session.active_group = None;
+        }
+    }
+
     pub fn active_group(&self, user: UserId) -> Option<GroupId> {
         self.lock()
             .get(&user)
@@ -164,5 +170,9 @@ mod tests {
         assert_eq!(sessions.active_group(user(1)), Some(a));
         assert_eq!(sessions.active_group(user(2)), Some(b));
         assert_eq!(sessions.active_group(user(3)), None);
+
+        sessions.clear_active_group(user(1));
+        assert_eq!(sessions.active_group(user(1)), None);
+        assert_eq!(sessions.active_group(user(2)), Some(b));
     }
 }

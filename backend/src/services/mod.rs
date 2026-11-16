@@ -3,6 +3,8 @@
 //! Business rules live here, not in HTTP or Telegram handlers.
 
 pub mod groups;
+pub mod invitations;
+pub mod members;
 pub mod membership;
 pub mod users;
 

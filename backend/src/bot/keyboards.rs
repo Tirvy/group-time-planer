@@ -1,6 +1,9 @@
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
-use crate::services::groups::GroupSummary;
+use crate::{
+    domain::{GroupId, InvitationId, InvitationToken, UserId},
+    services::{groups::GroupSummary, members::MemberSummary},
+};
 
 use super::{callbacks, texts};
 
@@ -50,6 +53,92 @@ fn group_label(group: &GroupSummary) -> String {
         texts::truncate(group.name.as_str(), 42),
         group.member_count
     )
+}
+
+pub fn invitation_preview_actions(
+    token: &InvitationToken,
+    can_join: bool,
+    is_member: bool,
+) -> InlineKeyboardMarkup {
+    let mut rows = Vec::new();
+
+    if can_join {
+        rows.push(vec![InlineKeyboardButton::callback(
+            "Вступить в группу",
+            callbacks::join_invitation(token),
+        )]);
+    }
+
+    rows.push(vec![InlineKeyboardButton::callback(
+        if is_member {
+            "Мои группы"
+        } else {
+            "В меню"
+        },
+        if is_member {
+            callbacks::MENU_GROUPS
+        } else {
+            callbacks::MENU_HELP
+        },
+    )]);
+
+    InlineKeyboardMarkup::new(rows)
+}
+
+pub fn invitation_actions(invitation: InvitationId) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+        "Отозвать приглашение",
+        callbacks::revoke_invitation(invitation),
+    )]])
+}
+
+pub fn leave_confirmation(group: GroupId) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new(vec![
+        vec![InlineKeyboardButton::callback(
+            "Покинуть группу",
+            callbacks::confirm_leave(group),
+        )],
+        vec![InlineKeyboardButton::callback("Отмена", callbacks::CANCEL)],
+    ])
+}
+
+pub fn transfer_selection(group: GroupId, members: &[MemberSummary]) -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = members
+        .iter()
+        .map(|member| {
+            vec![InlineKeyboardButton::callback(
+                texts::truncate(&texts::member_name(member), 48),
+                callbacks::select_transfer(group, member.user_id),
+            )]
+        })
+        .collect();
+
+    rows.push(vec![InlineKeyboardButton::callback(
+        "Отмена",
+        callbacks::CANCEL,
+    )]);
+
+    InlineKeyboardMarkup::new(rows)
+}
+
+pub fn transfer_confirmation(group: GroupId, target: UserId) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new(vec![
+        vec![InlineKeyboardButton::callback(
+            "Передать владение",
+            callbacks::confirm_transfer(group, target),
+        )],
+        vec![InlineKeyboardButton::callback("Отмена", callbacks::CANCEL)],
+    ])
+}
+
+pub fn delete_confirmation(group: GroupId) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new(vec![
+        vec![InlineKeyboardButton::callback(
+            "Удалить группу",
+            callbacks::confirm_delete(group),
+        )],
+        vec![InlineKeyboardButton::callback("Отмена", callbacks::CANCEL)],
+    ])
 }
 
 #[cfg(test)]

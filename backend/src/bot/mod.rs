@@ -2,6 +2,7 @@
 
 pub mod callbacks;
 pub mod keyboards;
+pub mod notifications;
 pub mod sessions;
 pub mod texts;
 
@@ -13,14 +14,20 @@ use teloxide::{
     dispatching::UpdateHandler,
     dptree,
     prelude::*,
-    types::{BotCommand, CallbackQuery, ChatId, ForceReply, Message, User as TelegramUser},
+    types::{
+        BotCommand, CallbackQuery, CallbackQueryId, ChatId, ForceReply, Message, MessageId,
+        User as TelegramUser,
+    },
     utils::command::BotCommands,
 };
 
 use crate::{
-    domain::{GroupName, TelegramId, UserId},
+    domain::{GroupId, GroupName, InvitationId, InvitationToken, TelegramId, UserId},
     services::{
         groups::{self, GroupError, GroupSummary},
+        invitations::{self, InvitationError, JoinOutcome, RevokeOutcome},
+        members::{self, MembersError},
+        membership::{self, LeaveError},
         users::{self, TelegramProfile, User},
     },
 };
@@ -39,6 +46,16 @@ enum Command {
     Create,
     #[command(description = "Мои группы")]
     Groups,
+    #[command(description = "Пригласить участников")]
+    Invite,
+    #[command(description = "Участники группы")]
+    Members,
+    #[command(description = "Покинуть группу")]
+    Leave,
+    #[command(description = "Передать владение")]
+    Transfer,
+    #[command(description = "Удалить группу")]
+    Delete,
     #[command(description = "Справка")]
     Help,
 }
@@ -65,6 +82,11 @@ async fn register_commands(bot: &Bot) {
         BotCommand::new("start", "Начать работу"),
         BotCommand::new("create", "Создать группу"),
         BotCommand::new("groups", "Мои группы"),
+        BotCommand::new("invite", "Пригласить участников"),
+        BotCommand::new("members", "Участники группы"),
+        BotCommand::new("leave", "Покинуть группу"),
+        BotCommand::new("transfer", "Передать владение"),
+        BotCommand::new("delete", "Удалить группу"),
         BotCommand::new("help", "Справка"),
     ];
 
@@ -122,15 +144,25 @@ async fn handle_command(
         }
     };
 
+    if !matches!(&command, Command::Create) {
+        sessions.clear_creation(user.id);
+    }
+
     match command {
-        Command::Start => {
-            sessions.clear_creation(user.id);
-            bot.send_message(chat, texts::start(&texts::display_name(&user)))
-                .reply_markup(keyboards::main_menu())
-                .await?;
-        }
+        Command::Start => match parse_start_payload(&message) {
+            StartPayload::Join(token) => {
+                send_invitation_preview(&bot, chat, &pool, user.id, &token).await?;
+            }
+            StartPayload::InvalidJoin => {
+                bot.send_message(chat, texts::INVALID_INVITATION).await?;
+            }
+            StartPayload::None => {
+                bot.send_message(chat, texts::start(&texts::display_name(&user)))
+                    .reply_markup(keyboards::main_menu())
+                    .await?;
+            }
+        },
         Command::Help => {
-            sessions.clear_creation(user.id);
             bot.send_message(chat, texts::help())
                 .reply_markup(keyboards::main_menu())
                 .await?;
@@ -139,8 +171,22 @@ async fn handle_command(
             start_group_creation(&bot, chat, user.id, &sessions).await?;
         }
         Command::Groups => {
-            sessions.clear_creation(user.id);
             send_groups(&bot, chat, user.id, &pool, &sessions).await?;
+        }
+        Command::Invite => {
+            send_invitation(&bot, chat, &pool, &sessions, &user).await?;
+        }
+        Command::Members => {
+            send_members(&bot, chat, &pool, &sessions, &user).await?;
+        }
+        Command::Leave => {
+            request_leave(&bot, chat, &pool, &sessions, &user).await?;
+        }
+        Command::Transfer => {
+            request_transfer(&bot, chat, &pool, &sessions, &user).await?;
+        }
+        Command::Delete => {
+            request_delete(&bot, chat, &pool, &sessions, &user).await?;
         }
     }
 
@@ -217,66 +263,66 @@ async fn handle_callback(
     sessions: Arc<BotSessions>,
 ) -> Result<(), RequestError> {
     let Some(chat) = query.message.as_ref().map(|message| message.chat().id) else {
-        bot.answer_callback_query(query.id)
-            .text(texts::CALLBACK_UNAVAILABLE)
-            .await?;
+        answer_alert(&bot, &query.id, texts::CALLBACK_UNAVAILABLE).await?;
         return Ok(());
     };
+    let message_id = query.message.as_ref().map(|message| message.id());
 
     let user = match load_user(&pool, &query.from).await {
         Ok(user) => user,
         Err(error) => {
             tracing::error!(error = %error, "failed to upsert Telegram user");
-            bot.answer_callback_query(query.id)
-                .text(texts::PROFILE_ERROR)
-                .await?;
+            answer_alert(&bot, &query.id, texts::PROFILE_ERROR).await?;
             return Ok(());
         }
     };
 
     let Some(action) = query.data.as_deref().and_then(callbacks::parse) else {
-        bot.answer_callback_query(query.id)
-            .text(texts::CALLBACK_UNAVAILABLE)
-            .await?;
+        answer_alert(&bot, &query.id, texts::CALLBACK_UNAVAILABLE).await?;
         return Ok(());
     };
 
     match action {
         CallbackAction::MenuCreate => {
-            bot.answer_callback_query(query.id).await?;
+            answer_silent(&bot, &query.id).await?;
             start_group_creation(&bot, chat, user.id, &sessions).await?;
         }
         CallbackAction::MenuGroups => {
-            bot.answer_callback_query(query.id).await?;
+            answer_silent(&bot, &query.id).await?;
             send_groups(&bot, chat, user.id, &pool, &sessions).await?;
         }
         CallbackAction::MenuHelp => {
-            bot.answer_callback_query(query.id).await?;
+            answer_silent(&bot, &query.id).await?;
             bot.send_message(chat, texts::help())
                 .reply_markup(keyboards::main_menu())
                 .await?;
         }
         CallbackAction::SelectGroup(group_id) => {
-            match groups::get_for_user(&pool, user.id, group_id).await {
-                Ok(group) => {
-                    sessions.set_active_group(user.id, group.id);
-                    bot.answer_callback_query(query.id)
-                        .text(texts::GROUP_SELECTED_TOAST)
-                        .await?;
-                    send_active_group(&bot, chat, &group).await?;
-                }
-                Err(GroupError::NotAMember(_)) => {
-                    bot.answer_callback_query(query.id)
-                        .text(texts::GROUP_NOT_AVAILABLE)
-                        .await?;
-                    bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
-                }
-                Err(error) => {
-                    tracing::error!(error = %error, "failed to load selected group");
-                    bot.answer_callback_query(query.id).await?;
-                    bot.send_message(chat, texts::GENERIC_ERROR).await?;
-                }
-            }
+            select_group(&bot, chat, &pool, &sessions, &user, group_id, &query.id).await?;
+        }
+        CallbackAction::JoinInvitation(token) => {
+            join_invitation(&bot, chat, &pool, &sessions, &user, &token, &query.id).await?;
+        }
+        CallbackAction::RevokeInvitation(invitation) => {
+            revoke_invitation(&bot, chat, message_id, &pool, &user, invitation, &query.id).await?;
+        }
+        CallbackAction::ConfirmLeave(group_id) => {
+            confirm_leave(&bot, chat, &pool, &sessions, &user, group_id, &query.id).await?;
+        }
+        CallbackAction::SelectTransfer { group, target } => {
+            select_transfer(&bot, chat, &pool, &user, group, target, &query.id).await?;
+        }
+        CallbackAction::ConfirmTransfer { group, target } => {
+            confirm_transfer(&bot, chat, &pool, &user, group, target, &query.id).await?;
+        }
+        CallbackAction::ConfirmDelete(group_id) => {
+            confirm_delete(&bot, chat, &pool, &sessions, &user, group_id, &query.id).await?;
+        }
+        CallbackAction::Cancel => {
+            answer(&bot, &query.id, texts::CANCELED).await?;
+            bot.send_message(chat, texts::CANCELED)
+                .reply_markup(keyboards::main_menu())
+                .await?;
         }
     }
 
@@ -344,6 +390,591 @@ async fn send_active_group(
         .reply_markup(keyboards::main_menu())
         .await?;
     Ok(())
+}
+
+/// Resolves the active group, or asks the user to choose when several exist.
+async fn resolve_group(
+    bot: &Bot,
+    chat: ChatId,
+    user: UserId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+) -> Result<Option<GroupSummary>, RequestError> {
+    if let Some(group_id) = sessions.active_group(user) {
+        match groups::get_for_user(pool, user, group_id).await {
+            Ok(group) => return Ok(Some(group)),
+            Err(GroupError::NotAMember(_)) => sessions.clear_active_group(user),
+            Err(error) => {
+                tracing::error!(error = %error, "failed to load active group");
+                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                return Ok(None);
+            }
+        }
+    }
+
+    match groups::list_for_user(pool, user).await {
+        Ok(groups) if groups.is_empty() => {
+            bot.send_message(chat, texts::GROUPS_EMPTY)
+                .reply_markup(keyboards::groups_menu(&[]))
+                .await?;
+            Ok(None)
+        }
+        Ok(mut groups) if groups.len() == 1 => {
+            let group = groups.remove(0);
+            sessions.set_active_group(user, group.id);
+            Ok(Some(group))
+        }
+        Ok(groups) => {
+            bot.send_message(chat, texts::GROUP_PICK_PROMPT)
+                .reply_markup(keyboards::groups_menu(&groups))
+                .await?;
+            Ok(None)
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to list groups");
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            Ok(None)
+        }
+    }
+}
+
+async fn select_group(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+    group_id: GroupId,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    match groups::get_for_user(pool, user.id, group_id).await {
+        Ok(group) => {
+            sessions.set_active_group(user.id, group.id);
+            answer(bot, query_id, texts::GROUP_SELECTED_TOAST).await?;
+            send_active_group(bot, chat, &group).await?;
+        }
+        Err(GroupError::NotAMember(_)) => {
+            answer_alert(bot, query_id, texts::GROUP_NOT_AVAILABLE).await?;
+            bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to load selected group");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn send_invitation(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+    if !group.is_owner() {
+        bot.send_message(chat, texts::NOT_OWNER).await?;
+        return Ok(());
+    }
+
+    let me = match bot.get_me().await {
+        Ok(me) => me,
+        Err(_) => {
+            bot.send_message(chat, texts::INVITATION_LINK_ERROR).await?;
+            return Ok(());
+        }
+    };
+    let Some(username) = me.username.as_deref() else {
+        bot.send_message(chat, texts::INVITATION_LINK_ERROR).await?;
+        return Ok(());
+    };
+
+    match invitations::create(pool, user.id, group.id, None).await {
+        Ok(created) => {
+            let url = format!(
+                "https://t.me/{username}?start={}",
+                created.token.start_payload()
+            );
+            bot.send_message(chat, texts::invitation_link(group.name.as_str(), &url))
+                .reply_markup(keyboards::invitation_actions(created.id))
+                .await?;
+        }
+        Err(InvitationError::NotOwner(_)) => {
+            bot.send_message(chat, texts::NOT_OWNER).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to create invitation");
+            bot.send_message(chat, texts::INVITATION_ERROR).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn send_invitation_preview(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    viewer: UserId,
+    token: &InvitationToken,
+) -> Result<(), RequestError> {
+    match invitations::preview(pool, token, viewer).await {
+        Ok(preview) => {
+            let can_join = !preview.is_member && !preview.is_full;
+            bot.send_message(chat, texts::invitation_preview(&preview))
+                .reply_markup(keyboards::invitation_preview_actions(
+                    token,
+                    can_join,
+                    preview.is_member,
+                ))
+                .await?;
+        }
+        Err(
+            InvitationError::InvalidToken | InvitationError::Expired | InvitationError::Revoked,
+        ) => {
+            bot.send_message(chat, texts::INVALID_INVITATION).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to load invitation preview");
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn join_invitation(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+    token: &InvitationToken,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    match invitations::join(pool, token, user.id).await {
+        Ok(JoinOutcome::Joined {
+            group_id,
+            group_name,
+        }) => {
+            sessions.set_active_group(user.id, group_id);
+            answer(bot, query_id, texts::JOINED_TOAST).await?;
+            bot.send_message(chat, texts::joined(&group_name))
+                .reply_markup(keyboards::main_menu())
+                .await?;
+            notifications::joined(bot, pool, group_id, &group_name, &texts::display_name(user))
+                .await;
+        }
+        Ok(JoinOutcome::AlreadyMember {
+            group_id,
+            group_name,
+        }) => {
+            sessions.set_active_group(user.id, group_id);
+            answer(bot, query_id, texts::ALREADY_MEMBER_TOAST).await?;
+            bot.send_message(chat, texts::already_member(&group_name))
+                .reply_markup(keyboards::main_menu())
+                .await?;
+        }
+        Err(InvitationError::GroupFull) => {
+            answer_alert(bot, query_id, texts::GROUP_FULL_TOAST).await?;
+        }
+        Err(
+            InvitationError::InvalidToken | InvitationError::Expired | InvitationError::Revoked,
+        ) => {
+            answer_alert(bot, query_id, texts::INVALID_INVITATION).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to join by invitation");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn revoke_invitation(
+    bot: &Bot,
+    chat: ChatId,
+    message_id: Option<MessageId>,
+    pool: &SqlitePool,
+    user: &User,
+    invitation: InvitationId,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    match invitations::revoke(pool, user.id, invitation).await {
+        Ok(RevokeOutcome::Revoked { group_name }) => {
+            answer(bot, query_id, texts::REVOKED_TOAST).await?;
+            let text = texts::invitation_revoked(&group_name);
+            if let Some(message_id) = message_id {
+                if bot
+                    .edit_message_text(chat, message_id, text.as_str())
+                    .await
+                    .is_err()
+                {
+                    bot.send_message(chat, text).await?;
+                }
+            } else {
+                bot.send_message(chat, text).await?;
+            }
+        }
+        Ok(RevokeOutcome::AlreadyRevoked { .. }) => {
+            answer(bot, query_id, texts::ALREADY_REVOKED_TOAST).await?;
+        }
+        Err(InvitationError::NotOwner(_)) => {
+            answer_alert(bot, query_id, texts::NOT_OWNER).await?;
+        }
+        Err(InvitationError::InvitationNotFound) => {
+            answer_alert(bot, query_id, texts::CALLBACK_UNAVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to revoke invitation");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn send_members(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+
+    match members::list_for_group(pool, user.id, group.id).await {
+        Ok(list) => {
+            bot.send_message(chat, texts::members_list(&group, &list, user.id))
+                .reply_markup(keyboards::main_menu())
+                .await?;
+        }
+        Err(MembersError::NotAMember(_)) => {
+            bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to list members");
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn request_leave(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+    if group.is_owner() {
+        bot.send_message(chat, texts::OWNER_CANNOT_LEAVE).await?;
+        return Ok(());
+    }
+
+    bot.send_message(chat, texts::leave_confirm(group.name.as_str()))
+        .reply_markup(keyboards::leave_confirmation(group.id))
+        .await?;
+    Ok(())
+}
+
+async fn confirm_leave(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+    group: GroupId,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    match membership::leave(pool, group, user.id).await {
+        Ok(left) => {
+            if sessions.active_group(user.id) == Some(group) {
+                sessions.clear_active_group(user.id);
+            }
+            answer(bot, query_id, texts::LEFT_TOAST).await?;
+            bot.send_message(chat, texts::left(&left.group_name))
+                .reply_markup(keyboards::main_menu())
+                .await?;
+            notifications::left(
+                bot,
+                pool,
+                group,
+                &left.group_name,
+                &texts::display_name(user),
+            )
+            .await;
+        }
+        Err(LeaveError::OwnerCannotLeave(_)) => {
+            answer_alert(bot, query_id, texts::OWNER_CANNOT_LEAVE).await?;
+        }
+        Err(LeaveError::NotAMember(_) | LeaveError::GroupNotFound(_)) => {
+            answer_alert(bot, query_id, texts::GROUP_NOT_AVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to leave group");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn request_transfer(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+    if !group.is_owner() {
+        bot.send_message(chat, texts::NOT_OWNER).await?;
+        return Ok(());
+    }
+
+    match members::list_for_group(pool, user.id, group.id).await {
+        Ok(list) => {
+            let targets: Vec<_> = list
+                .into_iter()
+                .filter(|member| !member.is_owner())
+                .collect();
+            if targets.is_empty() {
+                bot.send_message(chat, texts::NO_TRANSFER_TARGETS).await?;
+                return Ok(());
+            }
+            bot.send_message(chat, texts::transfer_select(group.name.as_str()))
+                .reply_markup(keyboards::transfer_selection(group.id, &targets))
+                .await?;
+        }
+        Err(MembersError::NotAMember(_)) => {
+            bot.send_message(chat, texts::GROUP_NOT_AVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to list transfer targets");
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn select_transfer(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    user: &User,
+    group: GroupId,
+    target: UserId,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    let group_summary = match groups::get_for_user(pool, user.id, group).await {
+        Ok(group) => group,
+        Err(GroupError::NotAMember(_)) => {
+            answer_alert(bot, query_id, texts::GROUP_NOT_AVAILABLE).await?;
+            return Ok(());
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to load group for transfer");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            return Ok(());
+        }
+    };
+
+    if !group_summary.is_owner() {
+        answer_alert(bot, query_id, texts::NOT_OWNER).await?;
+        return Ok(());
+    }
+
+    match members::list_for_group(pool, user.id, group).await {
+        Ok(list) => {
+            let Some(target_member) = list
+                .iter()
+                .find(|member| member.user_id == target && !member.is_owner())
+            else {
+                answer_alert(bot, query_id, texts::CALLBACK_UNAVAILABLE).await?;
+                return Ok(());
+            };
+            answer_silent(bot, query_id).await?;
+            bot.send_message(
+                chat,
+                texts::transfer_confirm(
+                    group_summary.name.as_str(),
+                    &texts::member_name(target_member),
+                ),
+            )
+            .reply_markup(keyboards::transfer_confirmation(group, target))
+            .await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to load transfer target");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn confirm_transfer(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    user: &User,
+    group: GroupId,
+    target: UserId,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    match groups::transfer_ownership(pool, user.id, group, target).await {
+        Ok(transfer) => {
+            answer(bot, query_id, texts::TRANSFERRED_TOAST).await?;
+
+            let target_name = members::list_for_group(pool, user.id, group)
+                .await
+                .ok()
+                .and_then(|list| {
+                    list.into_iter()
+                        .find(|member| member.user_id == target)
+                        .map(|member| texts::member_name(&member))
+                })
+                .unwrap_or_else(|| "участник".to_owned());
+
+            bot.send_message(chat, texts::transferred(&transfer.group_name, &target_name))
+                .reply_markup(keyboards::main_menu())
+                .await?;
+            notifications::new_owner(bot, pool, group, &transfer.group_name).await;
+        }
+        Err(GroupError::NotOwner(_)) => {
+            answer_alert(bot, query_id, texts::NOT_OWNER).await?;
+        }
+        Err(GroupError::TargetNotMember(_) | GroupError::InvalidTransferTarget) => {
+            answer_alert(bot, query_id, texts::CALLBACK_UNAVAILABLE).await?;
+        }
+        Err(GroupError::GroupNotFound(_)) => {
+            answer_alert(bot, query_id, texts::GROUP_NOT_AVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to transfer ownership");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn request_delete(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+    if !group.is_owner() {
+        bot.send_message(chat, texts::NOT_OWNER).await?;
+        return Ok(());
+    }
+
+    bot.send_message(chat, texts::delete_confirm(group.name.as_str()))
+        .reply_markup(keyboards::delete_confirmation(group.id))
+        .await?;
+    Ok(())
+}
+
+async fn confirm_delete(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+    group: GroupId,
+    query_id: &CallbackQueryId,
+) -> Result<(), RequestError> {
+    match groups::delete_group(pool, user.id, group).await {
+        Ok(deleted) => {
+            sessions.clear_active_group(user.id);
+            answer(bot, query_id, texts::DELETED_TOAST).await?;
+            bot.send_message(chat, texts::deleted(&deleted.group_name))
+                .reply_markup(keyboards::main_menu())
+                .await?;
+
+            let mut recipients = deleted.member_telegram_ids;
+            recipients.retain(|telegram_id| *telegram_id != user.telegram_id);
+            notifications::group_deleted(bot.clone(), recipients, deleted.group_name);
+        }
+        Err(GroupError::NotOwner(_)) => {
+            answer_alert(bot, query_id, texts::NOT_OWNER).await?;
+        }
+        Err(GroupError::GroupNotFound(_)) => {
+            answer_alert(bot, query_id, texts::GROUP_NOT_AVAILABLE).await?;
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "failed to delete group");
+            answer_silent(bot, query_id).await?;
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn answer(bot: &Bot, query_id: &CallbackQueryId, text: &str) -> Result<(), RequestError> {
+    bot.answer_callback_query(query_id.clone())
+        .text(text)
+        .await?;
+    Ok(())
+}
+
+async fn answer_silent(bot: &Bot, query_id: &CallbackQueryId) -> Result<(), RequestError> {
+    bot.answer_callback_query(query_id.clone()).await?;
+    Ok(())
+}
+
+async fn answer_alert(
+    bot: &Bot,
+    query_id: &CallbackQueryId,
+    text: &str,
+) -> Result<(), RequestError> {
+    bot.answer_callback_query(query_id.clone())
+        .text(text)
+        .show_alert(true)
+        .await?;
+    Ok(())
+}
+
+enum StartPayload {
+    Join(InvitationToken),
+    InvalidJoin,
+    None,
+}
+
+fn parse_start_payload(message: &Message) -> StartPayload {
+    let Some(text) = message.text() else {
+        return StartPayload::None;
+    };
+    let Some(payload) = text.split_whitespace().nth(1) else {
+        return StartPayload::None;
+    };
+    let Some(raw) = payload.strip_prefix("join_") else {
+        return StartPayload::None;
+    };
+
+    match InvitationToken::from_raw(raw) {
+        Ok(token) => StartPayload::Join(token),
+        Err(_) => StartPayload::InvalidJoin,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1,4 +1,4 @@
-use sqlx::{Connection, SqlitePool};
+use sqlx::{Connection, Sqlite, SqlitePool, Transaction};
 
 use crate::{
     db,
@@ -35,11 +35,25 @@ pub enum MembershipError {
     Database(#[from] sqlx::Error),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum LeaveError {
+    #[error("group {0} does not exist")]
+    GroupNotFound(GroupId),
+    #[error("user is not a member of group {0}")]
+    NotAMember(GroupId),
+    #[error("owner cannot leave group {0}")]
+    OwnerCannotLeave(GroupId),
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftGroup {
+    pub group_id: GroupId,
+    pub group_name: String,
+}
+
 /// Adds a regular member to a group inside one write transaction.
-///
-/// Capacity is re-checked under the write lock and is also enforced by a
-/// database trigger, so concurrent joins cannot exceed the cap. The member gets
-/// the first unused color from the group palette.
 pub async fn add(
     pool: &SqlitePool,
     group_id: GroupId,
@@ -47,10 +61,24 @@ pub async fn add(
 ) -> Result<Membership, MembershipError> {
     let mut connection = pool.acquire().await?;
     let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
+    let membership = add_locked(&mut transaction, group_id, user_id).await?;
+    transaction.commit().await?;
+    Ok(membership)
+}
 
+/// Inserts a regular member inside an existing write transaction.
+///
+/// Capacity is re-checked under the write lock and is also enforced by a
+/// database trigger, so concurrent joins cannot exceed the cap. The member gets
+/// the first unused color from the group palette.
+pub(crate) async fn add_locked(
+    transaction: &mut Transaction<'_, Sqlite>,
+    group_id: GroupId,
+    user_id: UserId,
+) -> Result<Membership, MembershipError> {
     let group_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM groups WHERE id = ?")
         .bind(group_id.get())
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(&mut **transaction)
         .await?;
     if group_exists.is_none() {
         return Err(MembershipError::GroupNotFound(group_id));
@@ -58,7 +86,7 @@ pub async fn add(
 
     let user_exists: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id = ?")
         .bind(user_id.get())
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(&mut **transaction)
         .await?;
     if user_exists.is_none() {
         return Err(MembershipError::UserNotFound(user_id));
@@ -68,7 +96,7 @@ pub async fn add(
         sqlx::query_scalar("SELECT role FROM group_members WHERE group_id = ? AND user_id = ?")
             .bind(group_id.get())
             .bind(user_id.get())
-            .fetch_optional(&mut *transaction)
+            .fetch_optional(&mut **transaction)
             .await?;
     if existing_role.is_some() {
         return Err(MembershipError::AlreadyMember { group_id, user_id });
@@ -77,7 +105,7 @@ pub async fn add(
     let member_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM group_members WHERE group_id = ?")
             .bind(group_id.get())
-            .fetch_one(&mut *transaction)
+            .fetch_one(&mut **transaction)
             .await?;
     if member_count >= MAX_GROUP_MEMBERS as i64 {
         return Err(MembershipError::GroupFull {
@@ -89,7 +117,7 @@ pub async fn add(
     let used_colors: Vec<String> =
         sqlx::query_scalar("SELECT color FROM group_members WHERE group_id = ?")
             .bind(group_id.get())
-            .fetch_all(&mut *transaction)
+            .fetch_all(&mut **transaction)
             .await?;
     let color = MEMBER_COLORS
         .iter()
@@ -115,10 +143,8 @@ pub async fn add(
     .bind(MemberRole::Member.as_db())
     .bind(color)
     .bind(now)
-    .execute(&mut *transaction)
+    .execute(&mut **transaction)
     .await?;
-
-    transaction.commit().await?;
 
     Ok(Membership {
         group_id,
@@ -127,5 +153,52 @@ pub async fn add(
         color: color.to_owned(),
         setup_completed_at: None,
         joined_at: now,
+    })
+}
+
+/// Removes a regular member and (by cascade) only their preferences in this
+/// group. The owner is rejected until ownership is transferred or the group is
+/// deleted.
+pub async fn leave(
+    pool: &SqlitePool,
+    group_id: GroupId,
+    user_id: UserId,
+) -> Result<LeftGroup, LeaveError> {
+    let mut connection = pool.acquire().await?;
+    let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
+
+    let group: Option<(String,)> = sqlx::query_as("SELECT name FROM groups WHERE id = ?")
+        .bind(group_id.get())
+        .fetch_optional(&mut *transaction)
+        .await?;
+    let Some((group_name,)) = group else {
+        return Err(LeaveError::GroupNotFound(group_id));
+    };
+
+    let role: Option<String> =
+        sqlx::query_scalar("SELECT role FROM group_members WHERE group_id = ? AND user_id = ?")
+            .bind(group_id.get())
+            .bind(user_id.get())
+            .fetch_optional(&mut *transaction)
+            .await?;
+    let Some(role) = role else {
+        return Err(LeaveError::NotAMember(group_id));
+    };
+
+    if role == MemberRole::Owner.as_db() {
+        return Err(LeaveError::OwnerCannotLeave(group_id));
+    }
+
+    sqlx::query("DELETE FROM group_members WHERE group_id = ? AND user_id = ?")
+        .bind(group_id.get())
+        .bind(user_id.get())
+        .execute(&mut *transaction)
+        .await?;
+
+    transaction.commit().await?;
+
+    Ok(LeftGroup {
+        group_id,
+        group_name,
     })
 }
