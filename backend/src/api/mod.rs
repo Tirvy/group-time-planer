@@ -1,4 +1,5 @@
 pub mod auth;
+mod best_time;
 mod calendar;
 mod error;
 mod groups;
@@ -52,6 +53,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/groups/{group_id}/members/{member_id}/calendar",
             get(calendar::get_member_calendar),
+        )
+        .route(
+            "/api/groups/{group_id}/best-time",
+            get(best_time::get_best_time),
+        )
+        .route(
+            "/api/groups/{group_id}/timetable.png",
+            get(best_time::get_timetable_png),
         )
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .with_state(state)

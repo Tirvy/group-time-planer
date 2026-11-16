@@ -168,7 +168,7 @@ fn member_dto(member: calendar::CalendarMember, timezone: IanaTimezone) -> Calen
     }
 }
 
-fn reference_week_dto(
+pub(crate) fn reference_week_dto(
     start_date: chrono::NaiveDate,
     end_date: chrono::NaiveDate,
     start: DateTime<Utc>,
@@ -183,7 +183,7 @@ fn reference_week_dto(
     }
 }
 
-fn format_local(datetime: DateTime<Utc>, timezone: IanaTimezone) -> String {
+pub(crate) fn format_local(datetime: DateTime<Utc>, timezone: IanaTimezone) -> String {
     datetime
         .with_timezone(&timezone.as_tz())
         .to_rfc3339_opts(SecondsFormat::Secs, false)
@@ -193,7 +193,7 @@ fn parse_group_id(raw: i64) -> Result<GroupId, ApiError> {
     GroupId::new(raw).map_err(|_| ApiError::validation("invalid group id"))
 }
 
-fn map_calendar_error(error: CalendarError) -> ApiError {
+pub(crate) fn map_calendar_error(error: CalendarError) -> ApiError {
     match error {
         CalendarError::Group(GroupError::NotAMember(_)) => ApiError::not_a_member(),
         CalendarError::Group(GroupError::GroupNotFound(_)) => ApiError::group_not_found(),

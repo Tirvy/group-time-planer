@@ -2,6 +2,19 @@
  * Centralized Russian UI strings. Components must not hardcode user-facing text
  * so that future localization can replace this module wholesale.
  */
+function participantsRu(count: number): string {
+  const mod100 = count % 100
+  const word =
+    mod100 >= 11 && mod100 <= 14
+      ? 'участников'
+      : count % 10 === 1
+        ? 'участник'
+        : count % 10 >= 2 && count % 10 <= 4
+          ? 'участника'
+          : 'участников'
+  return `${count} ${word}`
+}
+
 export const ru = {
   app: {
     title: 'Raid Scheduler',
@@ -74,6 +87,7 @@ export const ru = {
     tabMine: 'Мой календарь',
     tabCombined: 'Общий вид',
     tabMembers: 'Участники',
+    tabBest: 'Лучшее время',
     combinedTitle: 'Общий вид',
     combinedSubtitle: 'Все предпочтения в вашем часовом поясе.',
     referenceWeekLabel: 'Неделя',
@@ -91,6 +105,22 @@ export const ru = {
     noSegments: 'Нет отмеченного времени.',
     pendingNoCalendar: 'Календарь не настроен.',
     timezoneHint: 'Время показано в вашем часовом поясе.',
+    bestTimeTitle: 'Лучшее время',
+    bestTimeSubtitle: 'Рейтинг предпочтений за неделю.',
+    bestConfigured: 'Настроили календарь',
+    bestPending: 'Не настроили',
+    bestEmpty: 'Пока нет предпочтений для рейтинга.',
+    bestNoConfigured: 'Пока никто не настроил календарь.',
+    bestLoadError: 'Не удалось загрузить рейтинг.',
+    bestNote:
+      'Это предпочтения, а не подтверждённая доступность. Участники без настроенного календаря исключены из рейтинга.',
+    downloadPng: 'Скачать PNG',
+    downloadingPng: 'Готовим PNG…',
+    pngError: 'Не удалось сформировать PNG.',
+    preferredBy: (count: number) =>
+      count === 1
+        ? `предпочитает ${participantsRu(count)}`
+        : `предпочитают: ${participantsRu(count)}`,
     retry: 'Повторить',
     owner: 'владелец',
     member: 'участник',
@@ -124,18 +154,7 @@ export const ru = {
       'Изменения в календаре будут потеряны при переходе к другой группе.',
     stay: 'Остаться',
     leave: 'Перейти без сохранения',
-    participants: (count: number) => {
-      const mod100 = count % 100
-      const word =
-        mod100 >= 11 && mod100 <= 14
-          ? 'участников'
-          : count % 10 === 1
-            ? 'участник'
-            : count % 10 >= 2 && count % 10 <= 4
-              ? 'участника'
-              : 'участников'
-      return `${count} ${word}`
-    },
+    participants: participantsRu,
   },
   errors: {
     NETWORK_ERROR:

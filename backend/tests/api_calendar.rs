@@ -247,6 +247,69 @@ async fn combined_calendar_converts_every_member_into_viewer_timezone() {
 }
 
 #[tokio::test]
+async fn best_time_ranks_converted_members_and_excludes_pending() {
+    let fixture = calendar_fixture().await;
+    let path = format!("/api/groups/{}/best-time", fixture.group.get());
+
+    let (status, body) = call(
+        &fixture.app,
+        Method::GET,
+        &path,
+        Some(auth_header(&fixture.owner_init)),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["viewer_timezone"], "Europe/Berlin");
+    assert_eq!(body["reference_week"]["start_date"], "2026-11-16");
+    assert_eq!(body["total_member_count"], 4);
+    assert_eq!(body["configured_member_count"], 2);
+    assert_eq!(body["pending_member_count"], 2);
+
+    let intervals = body["intervals"].as_array().unwrap();
+    assert_eq!(intervals.len(), 1, "{body}");
+    assert_eq!(intervals[0]["day"], 0);
+    assert_eq!(intervals[0]["start_minute"], 18 * 60);
+    assert_eq!(intervals[0]["end_minute"], 19 * 60);
+    assert_eq!(intervals[0]["count"], 2);
+    assert_eq!(intervals[0]["start"], "2026-11-16T18:00:00+01:00");
+    assert_eq!(intervals[0]["end"], "2026-11-16T19:00:00+01:00");
+}
+
+#[tokio::test]
+async fn timetable_png_is_rendered_from_the_same_calendar() {
+    let fixture = calendar_fixture().await;
+    let path = format!("/api/groups/{}/timetable.png", fixture.group.get());
+
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(&path)
+        .header(AUTHORIZATION, auth_header(&fixture.owner_init))
+        .body(Body::empty())
+        .unwrap();
+    let response = fixture.app.clone().oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("image/png")
+    );
+
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(bytes.len() > 10_000, "PNG should contain the rendered grid");
+
+    let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+    let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+    assert_eq!(width, 2000, "2x render scale");
+    assert!(height > 1000);
+}
+
+#[tokio::test]
 async fn individual_calendar_is_available_to_any_member() {
     let fixture = calendar_fixture().await;
     let path = format!(

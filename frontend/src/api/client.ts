@@ -1,4 +1,5 @@
 import type {
+  BestTimeResponse,
   GroupsResponse,
   GroupCalendarResponse,
   MeResponse,
@@ -110,6 +111,47 @@ export async function fetchMemberCalendar(
     `/api/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}/calendar`,
     { headers: authHeaders(initData) },
   )
+}
+
+export async function fetchBestTime(
+  initData: string,
+  groupId: string,
+): Promise<BestTimeResponse> {
+  return request<BestTimeResponse>(
+    `/api/groups/${encodeURIComponent(groupId)}/best-time`,
+    { headers: authHeaders(initData) },
+  )
+}
+
+export async function fetchTimetablePng(
+  initData: string,
+  groupId: string,
+): Promise<Blob> {
+  let response: Response
+  try {
+    response = await fetch(
+      `/api/groups/${encodeURIComponent(groupId)}/timetable.png`,
+      {
+        headers: {
+          ...authHeaders(initData),
+          Accept: 'image/png',
+        },
+      },
+    )
+  } catch {
+    throw new ApiError('NETWORK_ERROR', 'network request failed')
+  }
+
+  if (!response.ok) {
+    const body = (await readJson(response)) as ErrorEnvelope | null
+    throw new ApiError(
+      body?.error?.code ?? 'HTTP_ERROR',
+      body?.error?.message ?? `request failed with ${response.status}`,
+      response.status,
+    )
+  }
+
+  return response.blob()
 }
 
 function authHeaders(initData: string): Record<string, string> {

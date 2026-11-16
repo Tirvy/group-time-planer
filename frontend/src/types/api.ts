@@ -82,3 +82,22 @@ export interface MemberCalendarResponse {
   reference_week: ReferenceWeek
   member: CalendarMember
 }
+
+export interface RankedInterval {
+  day: number
+  start_minute: number
+  end_minute: number
+  start: string
+  end: string
+  count: number
+}
+
+export interface BestTimeResponse {
+  group: CalendarGroup
+  viewer_timezone: string
+  reference_week: ReferenceWeek
+  total_member_count: number
+  configured_member_count: number
+  pending_member_count: number
+  intervals: RankedInterval[]
+}

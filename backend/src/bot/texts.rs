@@ -3,7 +3,8 @@
 use crate::{
     domain::{GroupNameError, MAX_GROUP_MEMBERS, MAX_GROUP_NAME_CHARS, UserId},
     services::{
-        groups::GroupSummary, invitations::InvitationPreview, members::MemberSummary, users::User,
+        best_time::BestTime, groups::GroupSummary, invitations::InvitationPreview,
+        members::MemberSummary, users::User,
     },
 };
 
@@ -44,6 +45,8 @@ pub const TRANSFERRED_TOAST: &str = "Владение передано";
 pub const DELETED_TOAST: &str = "Группа удалена";
 pub const REVOKED_TOAST: &str = "Приглашение отозвано";
 pub const ALREADY_REVOKED_TOAST: &str = "Приглашение уже отозвано";
+pub const TIMEZONE_REQUIRED: &str =
+    "Сначала выберите часовой пояс в Mini App. Без него расписание нельзя пересчитать.";
 
 pub fn start(name: &str) -> String {
     format!(
@@ -62,6 +65,8 @@ pub fn help() -> String {
      /groups — мои группы и выбор активной\n\
      /invite — пригласить участников (владелец)\n\
      /members — участники и статус календарей\n\
+     /besttime — лучшее время по предпочтениям\n\
+     /timetable — PNG-расписание группы\n\
      /leave — покинуть группу\n\
      /transfer — передать владение (владелец)\n\
      /delete — удалить группу (владелец)\n\
@@ -348,6 +353,97 @@ pub fn notify_group_deleted(group_name: &str) -> String {
     format!("Группа «{group_name}» удалена владельцем.")
 }
 
+pub fn best_time(best: &BestTime) -> String {
+    let mut text = format!(
+        "Лучшее время в группе «{}»\n\
+         Неделя: {} — {}\n\
+         Часовой пояс: {}\n\n\
+         Настроено участников: {} из {}.",
+        best.group_name,
+        best.week.start_date.format("%d.%m.%Y"),
+        best.week.end_date.format("%d.%m.%Y"),
+        best.viewer_timezone.name(),
+        best.configured_member_count,
+        best.total_member_count
+    );
+
+    if best.pending_member_count > 0 {
+        text.push_str(&format!(
+            "\nНе настроены: {}. Они исключены из рейтинга.",
+            participants(best.pending_member_count as i64)
+        ));
+    }
+
+    if best.configured_member_count == 0 {
+        text.push_str("\n\nПока никто не настроил календарь.");
+        return text;
+    }
+    if best.intervals.is_empty() {
+        text.push_str("\n\nНет отмеченных предпочтений.");
+        return text;
+    }
+
+    text.push_str("\n\n");
+    for (index, interval) in best.intervals.iter().take(10).enumerate() {
+        text.push_str(&format!(
+            "{}. {}, {}–{} — {}\n",
+            index + 1,
+            day_name(interval.day),
+            format_time(interval.start_minute),
+            format_time(interval.end_minute),
+            preferred_by(interval.count)
+        ));
+    }
+    if best.intervals.len() > 10 {
+        text.push_str("\nПоказаны первые 10 интервалов.");
+    }
+
+    text.push_str(
+        "\n\nЭто предпочтения, а не подтверждённая доступность. \
+         Пустое время не означает недоступность.",
+    );
+    text
+}
+
+pub fn timetable_caption(
+    group_name: &str,
+    start_date: chrono::NaiveDate,
+    end_date: chrono::NaiveDate,
+    timezone: &str,
+) -> String {
+    format!(
+        "Расписание группы «{group_name}»\n\
+         Неделя: {} — {}\n\
+         Часовой пояс: {timezone}",
+        start_date.format("%d.%m.%Y"),
+        end_date.format("%d.%m.%Y")
+    )
+}
+
+pub fn day_name(day: u8) -> &'static str {
+    match day {
+        0 => "Понедельник",
+        1 => "Вторник",
+        2 => "Среда",
+        3 => "Четверг",
+        4 => "Пятница",
+        5 => "Суббота",
+        _ => "Воскресенье",
+    }
+}
+
+pub fn format_time(minutes: u16) -> String {
+    format!("{:02}:{:02}", minutes / 60, minutes % 60)
+}
+
+pub fn preferred_by(count: usize) -> String {
+    if count == 1 {
+        "предпочитает 1 участник".to_owned()
+    } else {
+        format!("предпочитают: {}", participants(count as i64))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,6 +543,18 @@ mod tests {
     fn truncates_by_characters_and_adds_ellipsis() {
         assert_eq!(truncate("коротко", 20), "коротко");
         assert_eq!(truncate("длинное название", 4), "длин…");
+    }
+
+    #[test]
+    fn formats_best_time_primitives() {
+        assert_eq!(format_time(0), "00:00");
+        assert_eq!(format_time(570), "09:30");
+        assert_eq!(format_time(1440), "24:00");
+        assert_eq!(day_name(0), "Понедельник");
+        assert_eq!(day_name(6), "Воскресенье");
+        assert_eq!(preferred_by(1), "предпочитает 1 участник");
+        assert_eq!(preferred_by(2), "предпочитают: 2 участника");
+        assert_eq!(preferred_by(5), "предпочитают: 5 участников");
     }
 
     #[test]

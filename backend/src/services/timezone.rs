@@ -16,6 +16,22 @@ pub struct ReferenceWeek {
     pub end: DateTime<Utc>,
 }
 
+impl ReferenceWeek {
+    /// Viewer-local midnight instants for Monday through the following Monday.
+    /// Used as hard boundaries when ranking or rendering.
+    pub fn day_starts(&self) -> Result<Vec<DateTime<Utc>>, TimeError> {
+        let mut starts = Vec::with_capacity(8);
+        for offset in 0..=7 {
+            let date = self
+                .start_date
+                .checked_add_signed(Duration::days(offset))
+                .ok_or(TimeError::Overflow)?;
+            starts.push(resolve_local(midnight(date)?, self.timezone.as_tz())?);
+        }
+        Ok(starts)
+    }
+}
+
 /// A converted preference interval clipped to the reference week and split so
 /// it never crosses viewer midnight or a viewer DST transition.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +169,46 @@ pub fn resolve_local(local: NaiveDateTime, tz: Tz) -> Result<DateTime<Utc>, Time
             }
         }
     }
+}
+
+/// Converts an instant interval back into viewer-local day and minute bounds.
+pub fn viewer_position(
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    week: &ReferenceWeek,
+) -> Result<(u8, u16, u16), TimeError> {
+    if end <= start {
+        return Err(TimeError::Overflow);
+    }
+
+    let tz = week.timezone.as_tz();
+    let local_start = start.with_timezone(&tz);
+    let date = local_start.date_naive();
+    let day = (date - week.start_date).num_days();
+    if !(0..7).contains(&day) {
+        return Err(TimeError::Overflow);
+    }
+
+    let local_midnight = midnight(date)?;
+    let start_minute = (local_start.naive_local() - local_midnight).num_minutes();
+    let probe = end - Duration::seconds(1);
+    let local_end = probe.with_timezone(&tz);
+    let end_minute = if local_end.date_naive() != date {
+        1440
+    } else {
+        let seconds = (local_end.naive_local() - local_midnight).num_seconds();
+        ((seconds.max(0) + 59) / 60).min(1440)
+    };
+
+    if end_minute <= start_minute {
+        return Err(TimeError::Overflow);
+    }
+
+    Ok((
+        day as u8,
+        u16::try_from(start_minute).map_err(|_| TimeError::Overflow)?,
+        u16::try_from(end_minute).map_err(|_| TimeError::Overflow)?,
+    ))
 }
 
 fn nearest_valid_offset(local: NaiveDateTime, tz: Tz, direction: i64) -> Result<i32, TimeError> {

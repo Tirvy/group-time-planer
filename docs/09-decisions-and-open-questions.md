@@ -165,6 +165,9 @@ Rules:
 | Conversion | Recurring local intervals are expanded to reference-week instants, clipped to the week, then split at viewer midnight and viewer DST transitions | 2026-11-16 |
 | Combined read grid | 15-minute slices in the viewer timezone so offset conversions such as :15/:45 remain accurate; each slice shows member color dots and is inspectable | 2026-11-16 |
 | Clock | A single injected `Clock` abstraction supplies "now" to reference-week calculation; tests use a fixed clock | 2026-11-16 |
+| Best-time ranking | Boundary ranges from converted segments; a member counts only when their interval fully covers a range; pending excluded; completed-empty stays in the denominator; adjacent equal counts merge; results sorted by count | 2026-11-16 |
+| PNG timetable | Rendered from the same converted calendar model with `resvg`; 15-minute dots, group name, reference week, timezone, generation timestamp, member legend and pending indicators | 2026-11-16 |
+| PNG fonts | System fonts are loaded through `fontdb`; deployment hosts must provide Cyrillic-capable fonts | 2026-11-16 |
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
 | Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
@@ -222,3 +225,4 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 | 2026-11-16 | Phase 4: added server-side Telegram `initData` validation, authenticated API context, `/api/me`, timezone persistence, and the Mini App shell with mandatory timezone setup and change confirmation. Resolved the session-strategy question in favour of per-request validation. |
 | 2026-11-16 | Phase 5: added the preference model and transactional replacement service, group list and preference API endpoints, the Monday–Sunday 30-minute editor, tap/drag/keyboard interaction, clear/discard/save flows, and pending vs completed-empty states. Added backend and frontend model tests. |
 | 2026-11-16 | Phase 6: added the shared reference-week and timezone conversion service with the documented DST policy, combined and individual calendar APIs, converted viewer-timezone read views, and DST/reference-week tests. |
+| 2026-11-16 | Phase 7: added best-time ranking over converted intervals, adjacent equal-score merging, `/besttime` and `/timetable` bot commands, the Mini App best-time view and PNG download, and `resvg`-rendered PNG timetables from the shared calendar model. |

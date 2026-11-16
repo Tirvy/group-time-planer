@@ -3,10 +3,12 @@ import { onMounted, ref, watch } from 'vue'
 
 import {
   ApiError,
+  fetchBestTime,
   fetchGroupCalendar,
   fetchGroups,
   fetchMemberCalendar,
   fetchPreferences,
+  fetchTimetablePng,
   savePreferences,
 } from '../api/client'
 import { ru } from '../i18n/ru'
@@ -16,6 +18,7 @@ import {
   memberSetupLabel,
 } from '../planner/names'
 import type {
+  BestTimeResponse,
   CalendarMember,
   GroupCalendarResponse,
   GroupDto,
@@ -23,6 +26,7 @@ import type {
   PreferenceInterval,
   PreferencesResponse,
 } from '../types/api'
+import BestTimeView from './BestTimeView.vue'
 import CalendarEditor from './CalendarEditor.vue'
 import CombinedTimetable from './CombinedTimetable.vue'
 import MemberSchedule from './MemberSchedule.vue'
@@ -48,7 +52,7 @@ const discardOpen = ref(false)
 const snackbar = ref(false)
 let preferencesRequest = 0
 
-type GroupTab = 'mine' | 'combined' | 'members'
+type GroupTab = 'mine' | 'combined' | 'members' | 'best'
 const activeTab = ref<GroupTab>('mine')
 const calendar = ref<GroupCalendarResponse | null>(null)
 const calendarLoading = ref(false)
@@ -59,12 +63,20 @@ const memberCalendar = ref<MemberCalendarResponse | null>(null)
 const memberLoading = ref(false)
 const memberError = ref<string | null>(null)
 let memberRequest = 0
+const bestTime = ref<BestTimeResponse | null>(null)
+const bestTimeLoading = ref(false)
+const bestTimeError = ref<string | null>(null)
+let bestTimeRequest = 0
+const pngLoading = ref(false)
+const pngError = ref<string | null>(null)
 
 onMounted(loadGroups)
 
 watch(activeTab, (tab) => {
-  if (tab !== 'mine') {
+  if (tab === 'combined' || tab === 'members') {
     void ensureCalendar(true)
+  } else if (tab === 'best') {
+    void ensureBestTime(true)
   }
 })
 
@@ -128,6 +140,12 @@ async function selectGroup(group: GroupDto, checkDirty = true): Promise<void> {
   memberError.value = null
   memberLoading.value = false
   memberRequest += 1
+  bestTime.value = null
+  bestTimeError.value = null
+  bestTimeLoading.value = false
+  bestTimeRequest += 1
+  pngLoading.value = false
+  pngError.value = null
   await loadPreferences(group)
 }
 
@@ -219,6 +237,62 @@ function retryCalendar(): void {
   void ensureCalendar(true)
 }
 
+async function ensureBestTime(force = false): Promise<void> {
+  const group = selected.value
+  if (!group) return
+  if (!force && bestTime.value?.group.id === group.id) return
+  if (bestTimeLoading.value) return
+
+  const requestId = ++bestTimeRequest
+  bestTimeLoading.value = true
+  bestTimeError.value = null
+
+  try {
+    const response = await fetchBestTime(props.initData, group.id)
+    if (requestId !== bestTimeRequest || selected.value?.id !== group.id) {
+      return
+    }
+    bestTime.value = response
+  } catch (error) {
+    if (requestId === bestTimeRequest && selected.value?.id === group.id) {
+      bestTimeError.value = messageFor(error, ru.planner.bestLoadError)
+    }
+  } finally {
+    if (requestId === bestTimeRequest) {
+      bestTimeLoading.value = false
+    }
+  }
+}
+
+function retryBestTime(): void {
+  bestTime.value = null
+  void ensureBestTime(true)
+}
+
+async function downloadPng(): Promise<void> {
+  const group = selected.value
+  if (!group || pngLoading.value) return
+
+  pngLoading.value = true
+  pngError.value = null
+
+  try {
+    const blob = await fetchTimetablePng(props.initData, group.id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'timetable.png'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000)
+  } catch (error) {
+    pngError.value = messageFor(error, ru.planner.pngError)
+  } finally {
+    pngLoading.value = false
+  }
+}
+
 async function selectMember(member: CalendarMember): Promise<void> {
   const group = selected.value
   if (!group) return
@@ -286,9 +360,11 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
       preferences.value = response
       selected.value = updated
       calendar.value = null
+      bestTime.value = null
       selectedMember.value = null
       memberCalendar.value = null
       memberRequest += 1
+      pngError.value = null
     }
     snackbar.value = true
   } catch (error) {
@@ -398,6 +474,22 @@ function roleLabel(group: GroupDto): string {
           </v-card-text>
         </v-card>
 
+        <div class="d-flex align-center flex-wrap ga-2 mb-3">
+          <v-btn
+            size="small"
+            variant="tonal"
+            color="primary"
+            prepend-icon="mdi-download"
+            :loading="pngLoading"
+            @click="downloadPng"
+          >
+            {{ pngLoading ? ru.planner.downloadingPng : ru.planner.downloadPng }}
+          </v-btn>
+          <span v-if="pngError" class="text-caption text-error">
+            {{ pngError }}
+          </span>
+        </div>
+
         <v-btn-toggle
           v-model="activeTab"
           mandatory
@@ -414,6 +506,9 @@ function roleLabel(group: GroupDto): string {
           </v-btn>
           <v-btn value="members" prepend-icon="mdi-account-group-outline">
             {{ ru.planner.tabMembers }}
+          </v-btn>
+          <v-btn value="best" prepend-icon="mdi-trophy-outline">
+            {{ ru.planner.tabBest }}
           </v-btn>
         </v-btn-toggle>
 
@@ -590,6 +685,40 @@ function roleLabel(group: GroupDto): string {
               />
             </template>
           </template>
+        </template>
+
+        <template v-if="activeTab === 'best'">
+          <div
+            v-if="bestTimeLoading"
+            class="d-flex flex-column align-center py-8"
+            role="status"
+            aria-live="polite"
+          >
+            <v-progress-circular indeterminate color="primary" size="28" />
+            <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+              {{ ru.planner.loadingCalendar }}
+            </p>
+          </div>
+
+          <v-card v-else-if="bestTimeError" variant="tonal" class="state-card">
+            <v-card-text>
+              <v-alert type="error" variant="tonal" density="comfortable" role="alert">
+                {{ bestTimeError }}
+              </v-alert>
+            </v-card-text>
+            <v-card-actions class="px-4 pb-4">
+              <v-spacer />
+              <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="retryBestTime">
+                {{ ru.planner.retry }}
+              </v-btn>
+            </v-card-actions>
+          </v-card>
+
+          <BestTimeView
+            v-else-if="bestTime"
+            :best-time="bestTime"
+            :dirty="dirty"
+          />
         </template>
       </template>
     </template>

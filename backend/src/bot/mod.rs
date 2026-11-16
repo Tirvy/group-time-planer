@@ -8,6 +8,7 @@ pub mod texts;
 
 use std::{sync::Arc, time::Instant};
 
+use chrono::Utc;
 use sqlx::SqlitePool;
 use teloxide::{
     RequestError,
@@ -15,19 +16,21 @@ use teloxide::{
     dptree,
     prelude::*,
     types::{
-        BotCommand, CallbackQuery, CallbackQueryId, ChatId, ForceReply, Message, MessageId,
-        User as TelegramUser,
+        BotCommand, CallbackQuery, CallbackQueryId, ChatId, ForceReply, InputFile, Message,
+        MessageId, User as TelegramUser,
     },
     utils::command::BotCommands,
 };
 
 use crate::{
-    domain::{GroupId, GroupName, InvitationId, InvitationToken, TelegramId, UserId},
+    domain::{GroupId, GroupName, IanaTimezone, InvitationId, InvitationToken, TelegramId, UserId},
     services::{
+        best_time, calendar as calendar_service,
         groups::{self, GroupError, GroupSummary},
         invitations::{self, InvitationError, JoinOutcome, RevokeOutcome},
         members::{self, MembersError},
         membership::{self, LeaveError},
+        timetable,
         users::{self, TelegramProfile, User},
     },
 };
@@ -50,6 +53,10 @@ enum Command {
     Invite,
     #[command(description = "Участники группы")]
     Members,
+    #[command(description = "Лучшее время")]
+    BestTime,
+    #[command(description = "PNG-расписание группы")]
+    Timetable,
     #[command(description = "Покинуть группу")]
     Leave,
     #[command(description = "Передать владение")]
@@ -84,6 +91,8 @@ async fn register_commands(bot: &Bot) {
         BotCommand::new("groups", "Мои группы"),
         BotCommand::new("invite", "Пригласить участников"),
         BotCommand::new("members", "Участники группы"),
+        BotCommand::new("besttime", "Лучшее время"),
+        BotCommand::new("timetable", "PNG-расписание группы"),
         BotCommand::new("leave", "Покинуть группу"),
         BotCommand::new("transfer", "Передать владение"),
         BotCommand::new("delete", "Удалить группу"),
@@ -178,6 +187,12 @@ async fn handle_command(
         }
         Command::Members => {
             send_members(&bot, chat, &pool, &sessions, &user).await?;
+        }
+        Command::BestTime => {
+            send_best_time(&bot, chat, &pool, &sessions, &user).await?;
+        }
+        Command::Timetable => {
+            send_timetable(&bot, chat, &pool, &sessions, &user).await?;
         }
         Command::Leave => {
             request_leave(&bot, chat, &pool, &sessions, &user).await?;
@@ -664,6 +679,109 @@ async fn send_members(
         }
     }
     Ok(())
+}
+
+async fn send_best_time(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+    let Some(timezone) = user_timezone(user) else {
+        bot.send_message(chat, texts::TIMEZONE_REQUIRED).await?;
+        return Ok(());
+    };
+
+    let calendar =
+        match calendar_service::group_calendar(pool, user.id, group.id, Utc::now(), timezone).await
+        {
+            Ok(calendar) => calendar,
+            Err(error) => {
+                tracing::error!(error = %error, "failed to build calendar for best time");
+                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                return Ok(());
+            }
+        };
+
+    let ranked = match best_time::rank(&calendar) {
+        Ok(ranked) => ranked,
+        Err(error) => {
+            tracing::error!(error = %error, "failed to rank best time");
+            bot.send_message(chat, texts::GENERIC_ERROR).await?;
+            return Ok(());
+        }
+    };
+
+    bot.send_message(chat, texts::best_time(&ranked))
+        .reply_markup(keyboards::main_menu())
+        .await?;
+    Ok(())
+}
+
+async fn send_timetable(
+    bot: &Bot,
+    chat: ChatId,
+    pool: &SqlitePool,
+    sessions: &BotSessions,
+    user: &User,
+) -> Result<(), RequestError> {
+    let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
+        return Ok(());
+    };
+    let Some(timezone) = user_timezone(user) else {
+        bot.send_message(chat, texts::TIMEZONE_REQUIRED).await?;
+        return Ok(());
+    };
+
+    let calendar =
+        match calendar_service::group_calendar(pool, user.id, group.id, Utc::now(), timezone).await
+        {
+            Ok(calendar) => calendar,
+            Err(error) => {
+                tracing::error!(error = %error, "failed to build calendar for timetable");
+                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                return Ok(());
+            }
+        };
+
+    let caption = texts::timetable_caption(
+        &calendar.group_name,
+        calendar.week.start_date,
+        calendar.week.end_date,
+        calendar.viewer_timezone.name(),
+    );
+    let png =
+        match tokio::task::spawn_blocking(move || timetable::render_png(&calendar, Utc::now()))
+            .await
+        {
+            Ok(Ok(png)) => png,
+            Ok(Err(error)) => {
+                tracing::error!(error = %error, "failed to render timetable PNG");
+                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                return Ok(());
+            }
+            Err(error) => {
+                tracing::error!(error = %error, "timetable task failed");
+                bot.send_message(chat, texts::GENERIC_ERROR).await?;
+                return Ok(());
+            }
+        };
+
+    bot.send_document(chat, InputFile::memory(png).file_name("timetable.png"))
+        .caption(caption)
+        .await?;
+
+    Ok(())
+}
+
+fn user_timezone(user: &User) -> Option<IanaTimezone> {
+    user.timezone
+        .as_deref()
+        .and_then(|raw| IanaTimezone::parse(raw).ok())
 }
 
 async fn request_leave(

@@ -67,7 +67,7 @@ cd frontend && npm run typecheck && npm test && npm run build
 
 ### Telegram bot
 - Put the token from @BotFather into `TELOXIDE_TOKEN` in `.env` or the environment. Without a token the backend runs API-only and logs a warning.
-- Implemented commands: `/start`, `/create`, `/groups`, `/invite`, `/members`, `/leave`, `/transfer`, `/delete`, `/help`. All bot text is Russian; command identifiers are English.
+- Implemented commands: `/start`, `/create`, `/groups`, `/invite`, `/members`, `/leave`, `/transfer`, `/delete`, `/besttime`, `/timetable`, `/help`. All bot text is Russian; command identifiers are English.
 - `/create` asks for a group name in a guided step. `/groups` lists memberships and lets the user choose the active group.
 - `/invite` (owner only) creates a Telegram deep link. Opening the link shows a read-only preview; joining requires the explicit «Вступить в группу» button, and capacity/membership are revalidated at confirmation. The invitation message has a revoke button.
 - `/members` shows the owner first, then other members, with setup status. `/leave`, `/transfer` and `/delete` require confirmation and revalidate permissions server-side.
@@ -77,13 +77,15 @@ cd frontend && npm run typecheck && npm test && npm run build
 ### Telegram Mini App
 - The frontend loads the official Telegram Web App SDK and sends the raw `initData` as `Authorization: tma <initData>` on API requests. The backend validates the HMAC signature with the bot token and rejects stale data (`INIT_DATA_MAX_AGE_SECS`, default 24 hours).
 - No app session cookie or client-provided user ID is trusted; every protected route resolves identity from validated `initData`.
-- API endpoints in this phase: `POST /api/auth/telegram`, `GET /api/me`, `PUT /api/me/timezone`, `GET /api/groups`, `GET /api/groups/{group_id}/preferences`, `PUT /api/groups/{group_id}/preferences`, `GET /api/groups/{group_id}/calendar`, `GET /api/groups/{group_id}/members/{member_id}/calendar`.
+- API endpoints in this phase: `POST /api/auth/telegram`, `GET /api/me`, `PUT /api/me/timezone`, `GET /api/groups`, `GET /api/groups/{group_id}/preferences`, `PUT /api/groups/{group_id}/preferences`, `GET /api/groups/{group_id}/calendar`, `GET /api/groups/{group_id}/members/{member_id}/calendar`, `GET /api/groups/{group_id}/best-time`, `GET /api/groups/{group_id}/timetable.png`.
 - On the first calendar opening the Mini App requires an explicit IANA timezone choice. The same timezone interprets the user's recurring preferences and displays schedules. Changing it later requires a confirmation that explains both effects.
 - The Mini App lists the user's groups, lets them choose one explicitly when several exist, and shows a Monday–Sunday 30-minute grid. Tap toggles a slot; pointer drag paints or erases a range. Vertical touch scrolling is preserved, and keyboard activation works.
 - Selected slots mean **preferred**. Empty slots mean **no stated preference**, not unavailable. Saving an empty calendar is valid and marks setup completed; the UI distinguishes pending setup from completed-empty.
 - Selected cells use the member's stable group color. The owner receives a best-effort notification when a non-owner's saved preferences change.
 - The combined view converts every member's recurring intervals into actual instants for the upcoming Monday–Sunday in the viewer's timezone, then shows 15-minute viewer slices with member color dots. The individual member view lists exact converted time ranges by day. The reference-week dates and viewer timezone are always shown.
 - DST policy: ambiguous local times use the earlier offset; nonexistent local times advance by the gap. Converted segments are split at viewer DST boundaries so wall-clock ranges stay ordered.
+- The best-time ranking counts configured members whose converted interval fully covers each boundary range. Pending members are excluded; completed members with an empty calendar stay in the denominator. Adjacent ranges with the same count are merged, and the result is labelled as preferences, not availability.
+- `/timetable` and `…/timetable.png` render the same converted calendar model as the interactive combined view to PNG using `resvg`. Russian text requires system fonts on the deployment host (for example `fonts-dejavu-core` on Linux).
 - Outside Telegram the UI shows an "open via Telegram" state; there is no development auth bypass.
 - The Mini App requires HTTPS in production. Set the Mini App URL in @BotFather to the HTTPS origin served by the backend.
 
