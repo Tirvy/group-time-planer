@@ -2,6 +2,7 @@
 
 use std::{
     path::PathBuf,
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -12,7 +13,10 @@ use raid_scheduler_backend::{
     config::{Config, SecretString},
     db,
     domain::{GroupId, GroupName, UserId},
-    services::groups::{self, Group},
+    services::{
+        clock::{Clock, SystemClock},
+        groups::{self, Group},
+    },
 };
 use sha2::Sha256;
 use sqlx::SqlitePool;
@@ -118,10 +122,19 @@ pub fn test_auth_settings() -> AuthSettings {
 }
 
 pub fn test_router(pool: &SqlitePool, auth: AuthSettings) -> axum::Router {
+    test_router_with_clock(pool, auth, Arc::new(SystemClock))
+}
+
+pub fn test_router_with_clock(
+    pool: &SqlitePool,
+    auth: AuthSettings,
+    clock: Arc<dyn Clock>,
+) -> axum::Router {
     api::router(AppState {
         db: pool.clone(),
         auth,
         bot: None,
+        clock,
     })
 }
 

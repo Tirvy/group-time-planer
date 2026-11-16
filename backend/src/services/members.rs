@@ -9,6 +9,8 @@ pub struct MemberSummary {
     pub last_name: Option<String>,
     pub username: Option<String>,
     pub role: MemberRole,
+    pub color: String,
+    pub timezone: Option<String>,
     pub setup_completed_at: Option<i64>,
     pub joined_at: i64,
 }
@@ -57,6 +59,8 @@ pub async fn list_unchecked(
         Option<String>,
         Option<String>,
         String,
+        String,
+        Option<String>,
         Option<i64>,
         i64,
     );
@@ -66,6 +70,8 @@ pub async fn list_unchecked(
                 u.last_name,
                 u.username,
                 gm.role,
+                gm.color,
+                u.timezone,
                 gm.setup_completed_at,
                 gm.joined_at
          FROM group_members gm
@@ -81,7 +87,17 @@ pub async fn list_unchecked(
 
     rows.into_iter()
         .map(
-            |(user_id, first_name, last_name, username, role, setup_completed_at, joined_at)| {
+            |(
+                user_id,
+                first_name,
+                last_name,
+                username,
+                role,
+                color,
+                timezone,
+                setup_completed_at,
+                joined_at,
+            )| {
                 Ok(MemberSummary {
                     user_id: UserId::new(user_id)
                         .map_err(|error| MembersError::CorruptData(error.to_string()))?,
@@ -90,6 +106,8 @@ pub async fn list_unchecked(
                     username,
                     role: MemberRole::from_db(&role)
                         .map_err(|error| MembersError::CorruptData(error.to_string()))?,
+                    color,
+                    timezone,
                     setup_completed_at,
                     joined_at,
                 })

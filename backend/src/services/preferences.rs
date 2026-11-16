@@ -48,6 +48,18 @@ pub async fn get_own(
     user: UserId,
     group: GroupId,
 ) -> Result<MemberPreferences, PreferencesError> {
+    get_for_member(pool, group, user).await
+}
+
+/// Loads another member's local intervals for read-only calendar views.
+///
+/// The caller is responsible for checking that the viewer is a member of the
+/// group before calling this function.
+pub async fn get_for_member(
+    pool: &SqlitePool,
+    group: GroupId,
+    user: UserId,
+) -> Result<MemberPreferences, PreferencesError> {
     let setup_completed_at: Option<Option<i64>> = sqlx::query_scalar(
         "SELECT setup_completed_at FROM group_members WHERE group_id = ? AND user_id = ?",
     )

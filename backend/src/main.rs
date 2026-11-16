@@ -8,6 +8,7 @@ use raid_scheduler_backend::{
     bot,
     config::Config,
     db,
+    services::clock::SystemClock,
 };
 use tower_http::{
     services::{ServeDir, ServeFile},
@@ -46,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
             max_age: config.init_data_max_age,
         },
         bot,
+        clock: std::sync::Arc::new(SystemClock),
     };
     let app = with_static_frontend(api::router(state), &config.frontend_dist)
         .layer(TraceLayer::new_for_http());

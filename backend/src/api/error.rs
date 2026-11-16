@@ -98,6 +98,14 @@ impl ApiError {
         Self::new(StatusCode::NOT_FOUND, "GROUP_NOT_FOUND", "Group not found")
     }
 
+    pub fn member_not_found() -> Self {
+        Self::new(
+            StatusCode::NOT_FOUND,
+            "MEMBER_NOT_FOUND",
+            "Member not found in this group",
+        )
+    }
+
     pub fn internal() -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -368,6 +368,8 @@ mod tests {
             last_name: None,
             username: None,
             role,
+            color: "#4DD0E1".to_owned(),
+            timezone: Some("Asia/Tbilisi".to_owned()),
             setup_completed_at,
             joined_at: 0,
         }

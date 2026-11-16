@@ -60,6 +60,13 @@ impl SetupState {
     pub fn is_pending(self) -> bool {
         matches!(self, SetupState::Pending)
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SetupState::Pending => "pending",
+            SetupState::Completed => "completed",
+        }
+    }
 }
 
 #[cfg(test)]

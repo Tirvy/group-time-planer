@@ -1,6 +1,8 @@
 import type {
   GroupsResponse,
+  GroupCalendarResponse,
   MeResponse,
+  MemberCalendarResponse,
   PreferenceInterval,
   PreferencesResponse,
 } from '../types/api'
@@ -86,6 +88,27 @@ export async function savePreferences(
       },
       body: JSON.stringify({ intervals }),
     },
+  )
+}
+
+export async function fetchGroupCalendar(
+  initData: string,
+  groupId: string,
+): Promise<GroupCalendarResponse> {
+  return request<GroupCalendarResponse>(
+    `/api/groups/${encodeURIComponent(groupId)}/calendar`,
+    { headers: authHeaders(initData) },
+  )
+}
+
+export async function fetchMemberCalendar(
+  initData: string,
+  groupId: string,
+  memberId: string,
+): Promise<MemberCalendarResponse> {
+  return request<MemberCalendarResponse>(
+    `/api/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}/calendar`,
+    { headers: authHeaders(initData) },
   )
 }
 

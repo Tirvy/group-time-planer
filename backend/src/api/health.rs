@@ -77,6 +77,7 @@ mod tests {
                     max_age: std::time::Duration::from_secs(60),
                 },
                 bot: None,
+                clock: std::sync::Arc::new(crate::services::clock::SystemClock),
             }),
             pool,
             dir,
