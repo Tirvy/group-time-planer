@@ -271,9 +271,13 @@ async fn handle_text(
             match groups::create_with_owner(&pool, &name, user.id).await {
                 Ok(group) => {
                     sessions.set_active_group(user.id, group.id);
-                    bot.send_message(chat, texts::group_created(name.as_str()))
-                        .reply_markup(keyboards::main_menu())
-                        .await?;
+                    let invite_url = create_invite_url(&bot, &pool, user.id, group.id).await;
+                    bot.send_message(
+                        chat,
+                        texts::group_created(name.as_str(), invite_url.as_deref()),
+                    )
+                    .reply_markup(keyboards::main_menu())
+                    .await?;
                 }
                 Err(error) => {
                     tracing::error!(error = %error, "failed to create group");
@@ -534,6 +538,39 @@ async fn send_calendar_link(
         .reply_markup(InlineKeyboardMarkup::new(vec![vec![button]]))
         .await?;
     Ok(())
+}
+
+/// Creates a reusable invitation and returns its Telegram deep link.
+/// Group creation must still succeed if the link cannot be built, so failures
+/// are logged and reported as `None` instead of surfacing an error.
+async fn create_invite_url(
+    bot: &Bot,
+    pool: &SqlitePool,
+    owner: UserId,
+    group: GroupId,
+) -> Option<String> {
+    let username = match bot.get_me().await {
+        Ok(me) => me.username.clone(),
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to load bot username for invitation");
+            return None;
+        }
+    };
+    let Some(username) = username else {
+        tracing::warn!("bot username is not set; cannot build invitation link");
+        return None;
+    };
+
+    match invitations::create(pool, owner, group, None).await {
+        Ok(created) => Some(format!(
+            "https://t.me/{username}?start={}",
+            created.token.start_payload()
+        )),
+        Err(error) => {
+            tracing::error!(error = %error, "failed to create invitation for new group");
+            None
+        }
+    }
 }
 
 async fn send_invitation(

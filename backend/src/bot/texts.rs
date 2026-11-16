@@ -92,11 +92,18 @@ pub fn name_error(error: &GroupNameError) -> String {
     }
 }
 
-pub fn group_created(name: &str) -> String {
-    format!(
-        "Группа «{name}» создана. Вы указаны как владелец и первый участник.\n\n\
-         Откройте /groups, чтобы увидеть её в списке."
-    )
+pub fn group_created(name: &str, invite_url: Option<&str>) -> String {
+    match invite_url {
+        Some(url) => format!(
+            "Группа «{name}» создана. Приглашение по ссылке — {url}\n\n\
+             Вы указаны как владелец и первый участник."
+        ),
+        None => format!(
+            "Группа «{name}» создана. Приглашение создать не удалось — \
+             откройте /invite, чтобы получить ссылку.\n\n\
+             Вы указаны как владелец и первый участник."
+        ),
+    }
 }
 
 pub fn group_line(group: &GroupSummary, active: bool) -> String {
@@ -529,6 +536,21 @@ mod tests {
             ..preview
         };
         assert!(invitation_preview(&full).contains("Свободных мест нет"));
+    }
+
+    #[test]
+    fn group_created_includes_invitation_link_when_available() {
+        let text = group_created("Тестирование", Some("https://t.me/test_bot?start=abc123"));
+        assert_eq!(
+            text,
+            "Группа «Тестирование» создана. Приглашение по ссылке — \
+             https://t.me/test_bot?start=abc123\n\n\
+             Вы указаны как владелец и первый участник."
+        );
+
+        let fallback = group_created("Тестирование", None);
+        assert!(fallback.contains("Приглашение создать не удалось"));
+        assert!(fallback.contains("/invite"));
     }
 
     #[test]
