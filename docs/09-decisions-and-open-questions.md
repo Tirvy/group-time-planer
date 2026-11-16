@@ -153,6 +153,10 @@ Rules:
 | Bot security | Token is held in a redacting wrapper; `tracing-log` is intentionally disabled so token-bearing HTTP client logs are dropped | 2026-11-16 |
 | Invitations | 32 random bytes encoded as base64url (43 chars); only a SHA-256 hex hash is stored; preview is read-only; join is transactional and idempotent; owner can revoke | 2026-11-16 |
 | Notifications | Sent only after a successful commit, with a 3-second timeout; failures are logged without error details and never roll back domain writes | 2026-11-16 |
+| Mini App auth | Per-request `Authorization: tma <initData>` validated with HMAC-SHA256 using the bot token; no app session cookie or bearer token in the MVP | 2026-11-16 |
+| initData freshness | Default 24 hours (`INIT_DATA_MAX_AGE_SECS`), allowed 60 seconds to 7 days; up to 60 seconds of future clock skew | 2026-11-16 |
+| API errors | Stable envelope `{ "error": { "code", "message" } }`; the frontend maps codes to centralized Russian copy | 2026-11-16 |
+| Timezone UI | Browser IANA list via `Intl.supportedValuesOf` with a static fallback; explicit save; backend revalidates with `chrono-tz` | 2026-11-16 |
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
 | Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
@@ -181,16 +185,15 @@ the related phase is marked done.
 
 | # | Question | Target phase | Interim behavior |
 |---|---|---|---|
-| 1 | Should the Mini App exchange `initData` for a short-lived session token/cookie, or send validated `initData` on every request? | 4 | Both are allowed by the API contract; identity always derives from validated server-side auth |
-| 2 | Exact rate limits and mechanism for invitation preview/join and PNG generation | 7–8 | Request size limits and short transactions; single instance |
-| 3 | Exact 20-color palette and assignment rule for stable member colors | 1 | Deterministic distinct palette assigned on join; proposal, confirm before polish |
-| 4 | Group primary key type: integer or UUID | 1 | Integer primary key implemented in migration `0001`; changing it requires a migration |
-| 5 | Notification retry policy | post-MVP | Log failures only; never retry within the request |
-| 6 | Whether percentages are displayed anywhere | 5–7 | Optional; if shown, denominator = completed members |
-| 7 | Cleanup of expired/revoked invitation rows | post-MVP | Keep rows; validation rejects them |
-| 8 | Deployment target: Docker Compose or systemd | 8 | Both acceptable per architecture; document the chosen one |
-| 9 | Should the bot remember the active group across restarts? | post-MVP | In-memory selection; the user is asked to choose again after a restart |
-| 10 | What should the default invitation lifetime be? | post-MVP | No expiry by default; the owner can revoke the invitation at any time |
+| 1 | Exact rate limits and mechanism for invitation preview/join and PNG generation | 7–8 | Request size limits and short transactions; single instance |
+| 2 | Exact 20-color palette and assignment rule for stable member colors | 1 | Deterministic distinct palette assigned on join; proposal, confirm before polish |
+| 3 | Group primary key type: integer or UUID | 1 | Integer primary key implemented in migration `0001`; changing it requires a migration |
+| 4 | Notification retry policy | post-MVP | Log failures only; never retry within the request |
+| 5 | Whether percentages are displayed anywhere | 5–7 | Optional; if shown, denominator = completed members |
+| 6 | Cleanup of expired/revoked invitation rows | post-MVP | Keep rows; validation rejects them |
+| 7 | Deployment target: Docker Compose or systemd | 8 | Both acceptable per architecture; document the chosen one |
+| 8 | Should the bot remember the active group across restarts? | post-MVP | In-memory selection; the user is asked to choose again after a restart |
+| 9 | What should the default invitation lifetime be? | post-MVP | No expiry by default; the owner can revoke the invitation at any time |
 
 ## 5. Explicitly out of scope
 
@@ -208,3 +211,4 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 | 2026-11-16 | Phase 1: added the initial SQLite schema (`users`, `groups`, `group_members`, `weekly_preferences`, `invitations`), domain types, transactional group/membership services, and migration/constraint/cascade tests. Recorded storage, migration and transaction decisions above. |
 | 2026-11-16 | Phase 2: added the Telegram bot (`/start`, `/create`, `/groups`, `/help`), user upsert from Telegram updates, group creation and selection, Russian bot copy, redacted token configuration, and service tests. |
 | 2026-11-16 | Phase 3: added secure invitations with preview, explicit join confirmation, revocation and expiry checks; members list; leave, ownership transfer, rename and deletion with notifications. Added lifecycle and invitation tests. |
+| 2026-11-16 | Phase 4: added server-side Telegram `initData` validation, authenticated API context, `/api/me`, timezone persistence, and the Mini App shell with mandatory timezone setup and change confirmation. Resolved the session-strategy question in favour of per-request validation. |

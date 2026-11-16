@@ -29,5 +29,6 @@ export const vuetify = createVuetify({
   defaults: {
     VBtn: { rounded: 'lg' },
     VCard: { rounded: 'xl' },
+    VAutocomplete: { rounded: 'lg' },
   },
 })

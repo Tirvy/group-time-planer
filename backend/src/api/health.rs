@@ -69,7 +69,17 @@ mod tests {
             ..Config::default()
         };
         let pool = db::connect(&config).await.unwrap();
-        (api::router(api::AppState { db: pool.clone() }), pool, dir)
+        (
+            api::router(api::AppState {
+                db: pool.clone(),
+                auth: crate::auth::AuthSettings {
+                    bot_token: None,
+                    max_age: std::time::Duration::from_secs(60),
+                },
+            }),
+            pool,
+            dir,
+        )
     }
 
     async fn get_health(app: axum::Router) -> (StatusCode, serde_json::Value) {

@@ -2,6 +2,7 @@ use std::{
     fmt,
     net::SocketAddr,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 /// Runtime configuration loaded from environment variables (optionally via `.env`).
@@ -15,6 +16,8 @@ pub struct Config {
     pub db_max_connections: u32,
     pub frontend_dist: PathBuf,
     pub telegram_bot_token: Option<SecretString>,
+    /// Maximum accepted age of Telegram Mini App `initData`.
+    pub init_data_max_age: Duration,
 }
 
 /// A secret that never prints its value through `Debug` or `Display`.
@@ -50,6 +53,8 @@ pub enum ConfigError {
     InvalidBindAddr { value: String },
     #[error("DB_MAX_CONNECTIONS must be an integer between 1 and 16, got {value:?}")]
     InvalidMaxConnections { value: String },
+    #[error("INIT_DATA_MAX_AGE_SECS must be between 60 and 604800, got {value:?}")]
+    InvalidInitDataMaxAge { value: String },
 }
 
 impl Default for Config {
@@ -62,6 +67,7 @@ impl Default for Config {
             db_max_connections: Self::DEFAULT_MAX_CONNECTIONS,
             frontend_dist: PathBuf::from(Self::DEFAULT_FRONTEND_DIST),
             telegram_bot_token: None,
+            init_data_max_age: Duration::from_secs(Self::DEFAULT_INIT_DATA_MAX_AGE_SECS),
         }
     }
 }
@@ -72,6 +78,9 @@ impl Config {
     pub const DEFAULT_FRONTEND_DIST: &'static str = "frontend/dist";
     pub const DEFAULT_MAX_CONNECTIONS: u32 = 5;
     pub const MAX_CONNECTIONS_LIMIT: u32 = 16;
+    pub const DEFAULT_INIT_DATA_MAX_AGE_SECS: u64 = 86_400;
+    pub const MIN_INIT_DATA_MAX_AGE_SECS: u64 = 60;
+    pub const MAX_INIT_DATA_MAX_AGE_SECS: u64 = 604_800;
 
     /// Loads configuration from the process environment.
     pub fn load() -> Result<Self, ConfigError> {
@@ -116,12 +125,28 @@ impl Config {
 
         let telegram_bot_token = value(&lookup, "TELOXIDE_TOKEN").map(SecretString::new);
 
+        let init_data_max_age = match value(&lookup, "INIT_DATA_MAX_AGE_SECS") {
+            Some(raw) => {
+                let secs = raw
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|seconds| {
+                        (Self::MIN_INIT_DATA_MAX_AGE_SECS..=Self::MAX_INIT_DATA_MAX_AGE_SECS)
+                            .contains(seconds)
+                    })
+                    .ok_or(ConfigError::InvalidInitDataMaxAge { value: raw })?;
+                Duration::from_secs(secs)
+            }
+            None => Duration::from_secs(Self::DEFAULT_INIT_DATA_MAX_AGE_SECS),
+        };
+
         Ok(Self {
             bind_addr,
             database_path,
             db_max_connections,
             frontend_dist,
             telegram_bot_token,
+            init_data_max_age,
         })
     }
 
@@ -169,6 +194,10 @@ mod tests {
             PathBuf::from(Config::DEFAULT_FRONTEND_DIST)
         );
         assert!(config.telegram_bot_token.is_none());
+        assert_eq!(
+            config.init_data_max_age,
+            Duration::from_secs(Config::DEFAULT_INIT_DATA_MAX_AGE_SECS)
+        );
     }
 
     #[test]
@@ -196,12 +225,25 @@ mod tests {
             ("DATABASE_PATH", " data/test.db "),
             ("DB_MAX_CONNECTIONS", "2"),
             ("FRONTEND_DIST", "web"),
+            ("INIT_DATA_MAX_AGE_SECS", "3600"),
         ])
         .expect("overrides are valid");
         assert_eq!(config.bind_addr, "0.0.0.0:9000".parse().unwrap());
         assert_eq!(config.database_path, PathBuf::from("data/test.db"));
         assert_eq!(config.db_max_connections, 2);
         assert_eq!(config.frontend_dist, PathBuf::from("web"));
+        assert_eq!(config.init_data_max_age, Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn rejects_out_of_range_init_data_age() {
+        for value in ["0", "59", "604801", "abc", "-1"] {
+            let error = config_from(&[("INIT_DATA_MAX_AGE_SECS", value)]).unwrap_err();
+            assert!(
+                matches!(error, ConfigError::InvalidInitDataMaxAge { .. }),
+                "expected rejection for {value}"
+            );
+        }
     }
 
     #[test]

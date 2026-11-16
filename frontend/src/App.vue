@@ -1,56 +1,55 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import { ApiError, fetchHealth } from './api/client'
+import TimezoneSetup from './components/TimezoneSetup.vue'
+import { useSession } from './composables/useSession'
 import { ru } from './i18n/ru'
-import type { HealthResponse } from './types/api'
 
-type LoadState = 'loading' | 'ready' | 'degraded' | 'error'
+const {
+  state,
+  user,
+  errorCode,
+  errorMessage,
+  displayName,
+  timezoneRequired,
+  saving,
+  saveError,
+  start,
+  saveTimezone,
+  clearSaveError,
+} = useSession()
 
-const state = ref<LoadState>('loading')
-const health = ref<HealthResponse | null>(null)
-const errorMessage = ref('')
+const editOpen = ref(false)
+const savedSnackbar = ref(false)
 
-const errorMessages: Record<string, string> = { ...ru.errors }
+function openTimezoneEditor(): void {
+  clearSaveError()
+  editOpen.value = true
+}
 
-const alertType = computed(() => {
-  if (state.value === 'ready') return 'success'
-  if (state.value === 'degraded') return 'warning'
-  return 'error'
-})
+function closeTimezoneEditor(): void {
+  clearSaveError()
+  editOpen.value = false
+}
 
-const alertTitle = computed(() => {
-  if (state.value === 'ready') return ru.status.okTitle
-  if (state.value === 'degraded') return ru.status.degradedTitle
-  return ru.status.errorTitle
-})
+const showReopenHint = computed(
+  () => errorCode.value === 'AUTH_EXPIRED' || errorCode.value === 'AUTH_INVALID',
+)
 
-const alertBody = computed(() => {
-  if (state.value === 'ready') return ru.status.okBody
-  if (state.value === 'degraded') return ru.status.degradedBody
-  return errorMessage.value || ru.status.errorBody
-})
+onMounted(start)
 
-async function check(): Promise<void> {
-  state.value = 'loading'
-  errorMessage.value = ''
-
-  try {
-    const result = await fetchHealth()
-    health.value = result
-    state.value = result.status === 'ok' ? 'ready' : 'degraded'
-  } catch (error) {
-    health.value = null
-    errorMessage.value =
-      error instanceof ApiError
-        ? (errorMessages[error.code] ?? ru.errors.UNKNOWN)
-        : ru.errors.UNKNOWN
-    state.value = 'error'
+async function saveInitialTimezone(timezone: string): Promise<void> {
+  if (await saveTimezone(timezone)) {
+    savedSnackbar.value = true
   }
 }
 
-onMounted(check)
-</script>
+async function saveChangedTimezone(timezone: string): Promise<void> {
+  if (await saveTimezone(timezone)) {
+    savedSnackbar.value = true
+    editOpen.value = false
+  }
+}</script>
 
 <template>
   <v-app>
@@ -61,74 +60,135 @@ onMounted(check)
           <span class="text-caption text-medium-emphasis">{{ ru.app.subtitle }}</span>
         </div>
       </v-app-bar-title>
+      <template v-if="state === 'ready' && user?.timezone_set">
+        <v-chip size="small" variant="tonal" color="primary" class="mr-3">
+          {{ user.timezone }}
+        </v-chip>
+      </template>
     </v-app-bar>
 
     <v-main>
       <v-container class="app-shell pt-4" max-width="560">
-        <v-card variant="tonal" class="status-card">
-          <v-card-text>
-            <div
-              v-if="state === 'loading'"
-              class="d-flex align-center ga-3 py-2"
-              role="status"
-              aria-live="polite"
-            >
-              <v-progress-circular indeterminate size="22" width="2" color="primary" />
-              <span class="text-body-2">{{ ru.status.checking }}</span>
-            </div>
+        <div
+          v-if="state === 'loading'"
+          class="d-flex flex-column align-center justify-center py-12"
+          role="status"
+          aria-live="polite"
+        >
+          <v-progress-circular indeterminate color="primary" size="36" />
+          <p class="text-body-2 text-medium-emphasis mt-4 mb-0">
+            {{ ru.auth.checking }}
+          </p>
+        </div>
 
-            <template v-else>
-              <v-alert
-                :type="alertType"
-                variant="tonal"
-                density="comfortable"
-                class="mb-4"
-                role="status"
-                aria-live="polite"
-              >
-                <div class="font-weight-bold">{{ alertTitle }}</div>
-                <div class="text-body-2">{{ alertBody }}</div>
-              </v-alert>
-
-              <div v-if="health" class="d-flex flex-wrap ga-2">
-                <v-chip
-                  size="small"
-                  variant="tonal"
-                  :color="health.database === 'ok' ? 'success' : 'error'"
-                  :prepend-icon="
-                    health.database === 'ok' ? 'mdi-database-check' : 'mdi-database-alert'
-                  "
-                >
-                  {{
-                    health.database === 'ok'
-                      ? ru.status.databaseOk
-                      : ru.status.databaseError
-                  }}
-                </v-chip>
-                <v-chip size="small" variant="outlined">
-                  {{ ru.status.version }} {{ health.version }}
-                </v-chip>
-              </div>
-
-              <v-btn
-                v-if="state === 'error' || state === 'degraded'"
-                class="mt-4"
-                color="primary"
-                variant="flat"
-                prepend-icon="mdi-refresh"
-                @click="check"
-              >
-                {{ ru.status.retry }}
-              </v-btn>
+        <v-card v-else-if="state === 'no-telegram'" variant="tonal" class="state-card">
+          <v-card-item>
+            <template #prepend>
+              <v-icon color="primary" size="32">mdi-telegram</v-icon>
             </template>
-          </v-card-text>
+            <v-card-title>{{ ru.auth.noTelegramTitle }}</v-card-title>
+            <v-card-subtitle class="text-wrap">
+              {{ ru.auth.noTelegramBody }}
+            </v-card-subtitle>
+          </v-card-item>
         </v-card>
 
-        <p class="text-caption text-medium-emphasis mt-6 mb-0">
-          {{ ru.app.stageNote }}
-        </p>
+        <v-card v-else-if="state === 'error'" variant="tonal" class="state-card">
+          <v-card-item>
+            <template #prepend>
+              <v-icon color="error" size="32">mdi-shield-alert-outline</v-icon>
+            </template>
+            <v-card-title>{{ ru.auth.errorTitle }}</v-card-title>
+          </v-card-item>
+          <v-card-text>
+            <v-alert type="error" variant="tonal" density="comfortable" role="alert">
+              {{ errorMessage }}
+            </v-alert>
+            <p v-if="showReopenHint" class="text-caption text-medium-emphasis mt-3 mb-0">
+              {{ ru.auth.expiredHint }}
+            </p>
+          </v-card-text>
+          <v-card-actions class="px-4 pb-4">
+            <v-spacer />
+            <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="start">
+              {{ ru.auth.retry }}
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+
+        <TimezoneSetup
+          v-else-if="timezoneRequired"
+          :current="null"
+          :saving="saving"
+          :error="saveError"
+          @save="saveInitialTimezone"
+        />
+
+        <template v-else-if="state === 'ready' && user">
+          <v-card variant="tonal" class="state-card mb-4">
+            <v-card-item>
+              <template #prepend>
+                <v-avatar color="primary" variant="tonal">
+                  <v-icon>mdi-account-check-outline</v-icon>
+                </v-avatar>
+              </template>
+              <v-card-title>{{ ru.home.greeting(displayName) }}</v-card-title>
+              <v-card-subtitle class="text-wrap">
+                {{ ru.home.profileNote }}
+              </v-card-subtitle>
+            </v-card-item>
+            <v-card-text>
+              <div class="text-caption text-medium-emphasis">
+                {{ ru.home.timezoneLabel }}
+              </div>
+              <div class="d-flex align-center flex-wrap ga-2 mt-1">
+                <v-chip color="primary" variant="tonal">
+                  {{ user.timezone }}
+                </v-chip>
+                <v-btn
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  prepend-icon="mdi-clock-edit-outline"
+                  @click="openTimezoneEditor"
+                >
+                  {{ ru.home.changeTimezone }}
+                </v-btn>
+              </div>
+            </v-card-text>
+          </v-card>
+
+          <v-card variant="tonal" class="state-card">
+            <v-card-item>
+              <template #prepend>
+                <v-icon color="primary" size="28">mdi-calendar-week-outline</v-icon>
+              </template>
+              <v-card-title>{{ ru.home.calendarTitle }}</v-card-title>
+              <v-card-subtitle class="text-wrap">
+                {{ ru.home.calendarBody }}
+              </v-card-subtitle>
+            </v-card-item>
+            <v-card-text>
+              <p class="text-body-2 mb-0">{{ ru.home.calendarNote }}</p>
+            </v-card-text>
+          </v-card>
+        </template>
       </v-container>
     </v-main>
+
+    <v-dialog v-model="editOpen" max-width="560" scrollable>
+      <TimezoneSetup
+        :current="user?.timezone ?? null"
+        :saving="saving"
+        :error="saveError"
+        @save="saveChangedTimezone"
+        @cancel="closeTimezoneEditor"
+      />
+    </v-dialog>
+
+    <v-snackbar v-model="savedSnackbar" color="success" :timeout="2500">
+      {{ ru.timezone.saved }}
+    </v-snackbar>
   </v-app>
 </template>
 
@@ -137,7 +197,7 @@ onMounted(check)
   padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
 
-.status-card {
+.state-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 </style>

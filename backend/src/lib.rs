@@ -5,6 +5,7 @@
 //! from both the bot and the Mini App API.
 
 pub mod api;
+pub mod auth;
 pub mod bot;
 pub mod config;
 pub mod db;

@@ -2,17 +2,24 @@
 
 use std::{
     path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use hmac::{Hmac, Mac};
 use raid_scheduler_backend::{
-    config::Config,
+    api::{self, AppState},
+    auth::AuthSettings,
+    config::{Config, SecretString},
     db,
     domain::{GroupId, GroupName, UserId},
     services::groups::{self, Group},
 };
+use sha2::Sha256;
 use sqlx::SqlitePool;
 use tempfile::TempDir;
+use url::form_urlencoded;
+
+pub const TEST_BOT_TOKEN: &str = "123456:TEST-BOT-TOKEN";
 
 pub struct TestDb {
     pub pool: SqlitePool,
@@ -94,4 +101,73 @@ pub async fn count(pool: &SqlitePool, sql: &str) -> i64 {
         .fetch_one(pool)
         .await
         .expect("count")
+}
+
+pub fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_secs() as i64
+}
+
+pub fn test_auth_settings() -> AuthSettings {
+    AuthSettings {
+        bot_token: Some(SecretString::new(TEST_BOT_TOKEN)),
+        max_age: Duration::from_secs(3600),
+    }
+}
+
+pub fn test_router(pool: &SqlitePool, auth: AuthSettings) -> axum::Router {
+    api::router(AppState {
+        db: pool.clone(),
+        auth,
+    })
+}
+
+pub async fn test_api() -> (axum::Router, TestDb) {
+    let test_db = test_db().await;
+    let router = test_router(&test_db.pool, test_auth_settings());
+    (router, test_db)
+}
+
+/// Builds signed Telegram Mini App initData for API tests.
+pub fn sign_init_data(token: &str, telegram_id: i64, auth_date: i64, first_name: &str) -> String {
+    let user = format!(
+        r#"{{"id":{telegram_id},"first_name":"{first_name}","last_name":"Тестов","username":"tester"}}"#
+    );
+    let fields = [
+        ("auth_date", auth_date.to_string()),
+        ("query_id", "AAH-test-query".to_owned()),
+        ("user", user),
+    ];
+
+    let mut sorted: Vec<(&str, &str)> = fields
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    sorted.sort_by(|left, right| left.0.cmp(right.0));
+    let data_check_string = sorted
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut key_mac = Hmac::<Sha256>::new_from_slice(b"WebAppData").unwrap();
+    key_mac.update(token.as_bytes());
+    let secret_key = key_mac.finalize().into_bytes();
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(&secret_key).unwrap();
+    mac.update(data_check_string.as_bytes());
+    let hash = hex::encode(mac.finalize().into_bytes());
+
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    for (key, value) in &fields {
+        serializer.append_pair(key, value);
+    }
+    serializer.append_pair("hash", &hash);
+    serializer.finish()
+}
+
+pub fn auth_header(init_data: &str) -> String {
+    format!("tma {init_data}")
 }

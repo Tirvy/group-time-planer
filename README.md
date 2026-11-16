@@ -74,6 +74,14 @@ cd frontend && npm run typecheck && npm run build
 - The active group and a pending "create" prompt are kept in memory for the single backend instance. After a restart the bot asks the user to choose again instead of relying on stale context.
 - The bot token is never logged; configuration redacts it in debug output.
 
+### Telegram Mini App
+- The frontend loads the official Telegram Web App SDK and sends the raw `initData` as `Authorization: tma <initData>` on API requests. The backend validates the HMAC signature with the bot token and rejects stale data (`INIT_DATA_MAX_AGE_SECS`, default 24 hours).
+- No app session cookie or client-provided user ID is trusted; every protected route resolves identity from validated `initData`.
+- API endpoints in this phase: `POST /api/auth/telegram`, `GET /api/me`, `PUT /api/me/timezone`.
+- On the first calendar opening the Mini App requires an explicit IANA timezone choice. The same timezone interprets the user's recurring preferences and displays schedules. Changing it later requires a confirmation that explains both effects.
+- Outside Telegram the UI shows an "open via Telegram" state; there is no development auth bypass.
+- The Mini App requires HTTPS in production. Set the Mini App URL in @BotFather to the HTTPS origin served by the backend.
+
 ### Data and operations
 - SQLite lives at the project-local `data/app.db`; the directory is created at startup.
 - The database file is created only when missing. Startup, migrations and upgrades never delete or recreate it.

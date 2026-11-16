@@ -1633,6 +1633,7 @@ dependencies = [
  "chrono-tz",
  "dotenvy",
  "hex",
+ "hmac",
  "http-body-util",
  "rand 0.9.5",
  "serde",
@@ -1647,6 +1648,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

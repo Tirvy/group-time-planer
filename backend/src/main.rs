@@ -4,6 +4,7 @@ use anyhow::Context;
 use axum::Router;
 use raid_scheduler_backend::{
     api::{self, AppState},
+    auth::AuthSettings,
     bot,
     config::Config,
     db,
@@ -38,7 +39,13 @@ async fn main() -> anyhow::Result<()> {
 
     start_telegram_bot(&config, &pool);
 
-    let state = AppState { db: pool.clone() };
+    let state = AppState {
+        db: pool.clone(),
+        auth: AuthSettings {
+            bot_token: config.telegram_bot_token.clone(),
+            max_age: config.init_data_max_age,
+        },
+    };
     let app = with_static_frontend(api::router(state), &config.frontend_dist)
         .layer(TraceLayer::new_for_http());
 

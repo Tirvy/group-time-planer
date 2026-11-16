@@ -1,4 +1,4 @@
-import { isHealthResponse, type HealthResponse } from '../types/api'
+import type { MeResponse } from '../types/api'
 
 interface ErrorEnvelope {
   error?: {
@@ -20,40 +20,65 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
+/** Exchanges raw Telegram initData for the authenticated user profile. */
+export async function authenticate(initData: string): Promise<MeResponse> {
+  return request<MeResponse>('/api/auth/telegram', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData }),
+  })
+}
+
+/** Re-reads the user profile. Identity always comes from the auth header. */
+export async function fetchMe(initData: string): Promise<MeResponse> {
+  return request<MeResponse>('/api/me', {
+    headers: authHeaders(initData),
+  })
+}
+
+export async function updateTimezone(
+  initData: string,
+  timezone: string,
+): Promise<MeResponse> {
+  return request<MeResponse>('/api/me/timezone', {
+    method: 'PUT',
+    headers: {
+      ...authHeaders(initData),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ timezone }),
+  })
+}
+
+function authHeaders(initData: string): Record<string, string> {
+  return { Authorization: `tma ${initData}` }
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
   let response: Response
   try {
-    response = await fetch('/health', {
-      headers: { Accept: 'application/json' },
-      signal,
+    response = await fetch(path, {
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        ...(init.headers ?? {}),
+      },
     })
-  } catch (cause) {
-    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
-    throw new ApiError('NETWORK_ERROR', 'health request failed')
+  } catch {
+    throw new ApiError('NETWORK_ERROR', 'network request failed')
   }
 
   const body = await readJson(response)
-
-  // A 503 still carries the structured health payload, which lets the UI show a
-  // degraded state instead of a generic failure.
-  if (response.status === 503 && isHealthResponse(body) && body.status === 'degraded') {
-    return body
-  }
-
   if (!response.ok) {
     const envelope = body as ErrorEnvelope | null
     throw new ApiError(
       envelope?.error?.code ?? 'HTTP_ERROR',
-      envelope?.error?.message ?? `health request failed with ${response.status}`,
+      envelope?.error?.message ?? `request failed with ${response.status}`,
       response.status,
     )
   }
 
-  if (!isHealthResponse(body)) {
-    throw new ApiError('HTTP_ERROR', 'unexpected health response shape', response.status)
-  }
-
-  return body
+  return body as T
 }
 
 async function readJson(response: Response): Promise<unknown> {

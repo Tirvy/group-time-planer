@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::domain::{TelegramId, UserId};
+use crate::domain::{IanaTimezone, TelegramId, UserId};
 
 /// Telegram profile data that is mutable display metadata, not identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub struct User {
 
 #[derive(Debug, thiserror::Error)]
 pub enum UserError {
+    #[error("user {0} does not exist")]
+    NotFound(UserId),
     #[error("database returned an invalid user id")]
     InvalidUserId,
     #[error("database returned an invalid telegram id")]
@@ -87,12 +89,59 @@ pub async fn upsert(pool: &SqlitePool, profile: &TelegramProfile) -> Result<User
     .fetch_one(pool)
     .await?;
 
+    user_from_row(row)
+}
+
+/// Persists the user's explicit IANA timezone choice.
+///
+/// The same value governs how their recurring preferences are interpreted and
+/// how schedules are displayed to them.
+pub async fn update_timezone(
+    pool: &SqlitePool,
+    user_id: UserId,
+    timezone: IanaTimezone,
+) -> Result<User, UserError> {
+    let row: (
+        i64,
+        i64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "UPDATE users
+         SET timezone = ?, updated_at = ?
+         WHERE id = ?
+         RETURNING id, telegram_id, username, first_name, last_name, timezone",
+    )
+    .bind(timezone.name())
+    .bind(super::now_millis())
+    .bind(user_id.get())
+    .fetch_optional(pool)
+    .await?
+    .ok_or(UserError::NotFound(user_id))?;
+
+    user_from_row(row)
+}
+
+type UserRow = (
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+fn user_from_row(
+    (id, telegram_id, username, first_name, last_name, timezone): UserRow,
+) -> Result<User, UserError> {
     Ok(User {
-        id: UserId::new(row.0).map_err(|_| UserError::InvalidUserId)?,
-        telegram_id: TelegramId::new(row.1).map_err(|_| UserError::InvalidTelegramId)?,
-        username: row.2,
-        first_name: row.3,
-        last_name: row.4,
-        timezone: row.5,
+        id: UserId::new(id).map_err(|_| UserError::InvalidUserId)?,
+        telegram_id: TelegramId::new(telegram_id).map_err(|_| UserError::InvalidTelegramId)?,
+        username,
+        first_name,
+        last_name,
+        timezone,
     })
 }
