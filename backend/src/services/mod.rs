@@ -6,6 +6,7 @@ pub mod groups;
 pub mod invitations;
 pub mod members;
 pub mod membership;
+pub mod preferences;
 pub mod users;
 
 /// SQLite timestamps are UTC milliseconds since the Unix epoch.

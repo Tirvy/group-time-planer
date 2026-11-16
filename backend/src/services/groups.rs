@@ -21,6 +21,8 @@ pub struct GroupSummary {
     pub id: GroupId,
     pub name: GroupName,
     pub role: MemberRole,
+    /// Stable color of the viewer's membership in this group.
+    pub color: String,
     pub member_count: i64,
     pub setup_completed_at: Option<i64>,
 }
@@ -119,14 +121,17 @@ pub async fn create_with_owner(
 ///
 /// A user may be a member of multiple groups; preferences and setup state are
 /// independent per group.
+type SummaryRow = (i64, String, String, String, Option<i64>, i64);
+
 pub async fn list_for_user(
     pool: &SqlitePool,
     user: UserId,
 ) -> Result<Vec<GroupSummary>, GroupError> {
-    let rows: Vec<(i64, String, String, Option<i64>, i64)> = sqlx::query_as(
+    let rows: Vec<SummaryRow> = sqlx::query_as(
         "SELECT g.id,
                 g.name,
                 gm.role,
+                gm.color,
                 gm.setup_completed_at,
                 (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count
          FROM group_members gm
@@ -152,10 +157,11 @@ pub async fn get_for_user(
     user: UserId,
     group: GroupId,
 ) -> Result<GroupSummary, GroupError> {
-    let row: Option<(i64, String, String, Option<i64>, i64)> = sqlx::query_as(
+    let row: Option<SummaryRow> = sqlx::query_as(
         "SELECT g.id,
                 g.name,
                 gm.role,
+                gm.color,
                 gm.setup_completed_at,
                 (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count
          FROM group_members gm
@@ -174,7 +180,7 @@ pub async fn get_for_user(
 }
 
 fn summary_from_row(
-    (id, name, role, setup_completed_at, member_count): (i64, String, String, Option<i64>, i64),
+    (id, name, role, color, setup_completed_at, member_count): SummaryRow,
 ) -> Result<GroupSummary, GroupError> {
     let id = GroupId::new(id).map_err(|_| GroupError::InvalidGroupId)?;
     let name =
@@ -185,6 +191,7 @@ fn summary_from_row(
         id,
         name,
         role,
+        color,
         member_count,
         setup_completed_at,
     })

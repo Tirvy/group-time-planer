@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
         .context("failed to apply database migrations")?;
     tracing::info!("database migrations applied");
 
-    start_telegram_bot(&config, &pool);
+    let bot = start_telegram_bot(&config, &pool);
 
     let state = AppState {
         db: pool.clone(),
@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
             bot_token: config.telegram_bot_token.clone(),
             max_age: config.init_data_max_age,
         },
+        bot,
     };
     let app = with_static_frontend(api::router(state), &config.frontend_dist)
         .layer(TraceLayer::new_for_http());
@@ -81,18 +82,20 @@ fn log_startup(config: &Config) {
 ///
 /// Long polling is enough for the MVP and avoids exposing a webhook endpoint.
 /// The token is never logged; `Config` redacts it in `Debug` output.
-fn start_telegram_bot(config: &Config, pool: &sqlx::SqlitePool) {
+fn start_telegram_bot(config: &Config, pool: &sqlx::SqlitePool) -> Option<teloxide::Bot> {
     let Some(token) = config.telegram_bot_token.clone() else {
         tracing::warn!("TELOXIDE_TOKEN is not set; Telegram bot is disabled");
-        return;
+        return None;
     };
 
     let bot = teloxide::Bot::new(token.expose());
+    let polling_bot = bot.clone();
     let bot_pool = pool.clone();
     tokio::spawn(async move {
-        bot::run(bot, bot_pool).await;
+        bot::run(polling_bot, bot_pool).await;
     });
     tracing::info!("Telegram bot enabled (long polling)");
+    Some(bot)
 }
 
 /// Serves the Vite build when present. Missing builds are tolerated so the API

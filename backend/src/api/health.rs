@@ -76,6 +76,7 @@ mod tests {
                     bot_token: None,
                     max_age: std::time::Duration::from_secs(60),
                 },
+                bot: None,
             }),
             pool,
             dir,

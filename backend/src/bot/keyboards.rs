@@ -179,6 +179,7 @@ mod tests {
             id: crate::domain::GroupId::new(7).unwrap(),
             name: GroupName::parse("Рейд").unwrap(),
             role: MemberRole::Owner,
+            color: "#4DD0E1".to_owned(),
             member_count: 3,
             setup_completed_at: None,
         }];

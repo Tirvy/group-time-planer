@@ -1,4 +1,9 @@
-import type { MeResponse } from '../types/api'
+import type {
+  GroupsResponse,
+  MeResponse,
+  PreferenceInterval,
+  PreferencesResponse,
+} from '../types/api'
 
 interface ErrorEnvelope {
   error?: {
@@ -48,6 +53,40 @@ export async function updateTimezone(
     },
     body: JSON.stringify({ timezone }),
   })
+}
+
+export async function fetchGroups(initData: string): Promise<GroupsResponse> {
+  return request<GroupsResponse>('/api/groups', {
+    headers: authHeaders(initData),
+  })
+}
+
+export async function fetchPreferences(
+  initData: string,
+  groupId: string,
+): Promise<PreferencesResponse> {
+  return request<PreferencesResponse>(
+    `/api/groups/${encodeURIComponent(groupId)}/preferences`,
+    { headers: authHeaders(initData) },
+  )
+}
+
+export async function savePreferences(
+  initData: string,
+  groupId: string,
+  intervals: PreferenceInterval[],
+): Promise<PreferencesResponse> {
+  return request<PreferencesResponse>(
+    `/api/groups/${encodeURIComponent(groupId)}/preferences`,
+    {
+      method: 'PUT',
+      headers: {
+        ...authHeaders(initData),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ intervals }),
+    },
+  )
 }
 
 function authHeaders(initData: string): Record<string, string> {

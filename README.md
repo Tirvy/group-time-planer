@@ -62,7 +62,7 @@ Checks:
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test
-cd frontend && npm run typecheck && npm run build
+cd frontend && npm run typecheck && npm test && npm run build
 ```
 
 ### Telegram bot
@@ -77,8 +77,11 @@ cd frontend && npm run typecheck && npm run build
 ### Telegram Mini App
 - The frontend loads the official Telegram Web App SDK and sends the raw `initData` as `Authorization: tma <initData>` on API requests. The backend validates the HMAC signature with the bot token and rejects stale data (`INIT_DATA_MAX_AGE_SECS`, default 24 hours).
 - No app session cookie or client-provided user ID is trusted; every protected route resolves identity from validated `initData`.
-- API endpoints in this phase: `POST /api/auth/telegram`, `GET /api/me`, `PUT /api/me/timezone`.
+- API endpoints in this phase: `POST /api/auth/telegram`, `GET /api/me`, `PUT /api/me/timezone`, `GET /api/groups`, `GET /api/groups/{group_id}/preferences`, `PUT /api/groups/{group_id}/preferences`.
 - On the first calendar opening the Mini App requires an explicit IANA timezone choice. The same timezone interprets the user's recurring preferences and displays schedules. Changing it later requires a confirmation that explains both effects.
+- The Mini App lists the user's groups, lets them choose one explicitly when several exist, and shows a Monday–Sunday 30-minute grid. Tap toggles a slot; pointer drag paints or erases a range. Vertical touch scrolling is preserved, and keyboard activation works.
+- Selected slots mean **preferred**. Empty slots mean **no stated preference**, not unavailable. Saving an empty calendar is valid and marks setup completed; the UI distinguishes pending setup from completed-empty.
+- Selected cells use the member's stable group color. The owner receives a best-effort notification when a non-owner's saved preferences change.
 - Outside Telegram the UI shows an "open via Telegram" state; there is no development auth bypass.
 - The Mini App requires HTTPS in production. Set the Mini App URL in @BotFather to the HTTPS origin served by the backend.
 

@@ -336,6 +336,10 @@ pub fn notify_left(member_name: &str, group_name: &str) -> String {
     format!("Участник {member_name} покинул группу «{group_name}».")
 }
 
+pub fn notify_preferences_changed(member_name: &str, group_name: &str) -> String {
+    format!("Участник {member_name} обновил предпочтения в группе «{group_name}».")
+}
+
 pub fn notify_new_owner(group_name: &str) -> String {
     format!("Вы стали владельцем группы «{group_name}».")
 }
@@ -374,6 +378,7 @@ mod tests {
             id: GroupId::new(1).unwrap(),
             name: crate::domain::GroupName::parse("Рейд").unwrap(),
             role: MemberRole::Owner,
+            color: "#4DD0E1".to_owned(),
             member_count: 2,
             setup_completed_at: None,
         }

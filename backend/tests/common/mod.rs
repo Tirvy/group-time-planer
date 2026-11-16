@@ -121,6 +121,7 @@ pub fn test_router(pool: &SqlitePool, auth: AuthSettings) -> axum::Router {
     api::router(AppState {
         db: pool.clone(),
         auth,
+        bot: None,
     })
 }
 

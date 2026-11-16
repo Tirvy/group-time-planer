@@ -157,6 +157,10 @@ Rules:
 | initData freshness | Default 24 hours (`INIT_DATA_MAX_AGE_SECS`), allowed 60 seconds to 7 days; up to 60 seconds of future clock skew | 2026-11-16 |
 | API errors | Stable envelope `{ "error": { "code", "message" } }`; the frontend maps codes to centralized Russian copy | 2026-11-16 |
 | Timezone UI | Browser IANA list via `Intl.supportedValuesOf` with a static fallback; explicit save; backend revalidates with `chrono-tz` | 2026-11-16 |
+| Preferences API | Local `(weekday, start_minute, end_minute)` intervals; `PUT` replaces atomically; empty list is valid and marks setup completed; `setup_completed_at` records the first successful save | 2026-11-16 |
+| Calendar editor | Monday–Sunday 30-minute grid; tap toggles; pointer drag paints; vertical touch scrolling is preserved; keyboard activation is supported | 2026-11-16 |
+| Preference notifications | Owner is notified after commit when a non-owner's normalized intervals change; delivery failures never roll back the save | 2026-11-16 |
+| Group summary | Includes viewer role, stable membership color, member count and setup state | 2026-11-16 |
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
 | Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
@@ -212,3 +216,4 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 | 2026-11-16 | Phase 2: added the Telegram bot (`/start`, `/create`, `/groups`, `/help`), user upsert from Telegram updates, group creation and selection, Russian bot copy, redacted token configuration, and service tests. |
 | 2026-11-16 | Phase 3: added secure invitations with preview, explicit join confirmation, revocation and expiry checks; members list; leave, ownership transfer, rename and deletion with notifications. Added lifecycle and invitation tests. |
 | 2026-11-16 | Phase 4: added server-side Telegram `initData` validation, authenticated API context, `/api/me`, timezone persistence, and the Mini App shell with mandatory timezone setup and change confirmation. Resolved the session-strategy question in favour of per-request validation. |
+| 2026-11-16 | Phase 5: added the preference model and transactional replacement service, group list and preference API endpoints, the Monday–Sunday 30-minute editor, tap/drag/keyboard interaction, clear/discard/save flows, and pending vs completed-empty states. Added backend and frontend model tests. |

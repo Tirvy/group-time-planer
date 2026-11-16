@@ -86,6 +86,18 @@ impl ApiError {
         )
     }
 
+    pub fn not_a_member() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "NOT_A_MEMBER",
+            "The user is not a member of this group",
+        )
+    }
+
+    pub fn group_not_found() -> Self {
+        Self::new(StatusCode::NOT_FOUND, "GROUP_NOT_FOUND", "Group not found")
+    }
+
     pub fn internal() -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,

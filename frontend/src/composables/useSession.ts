@@ -88,6 +88,7 @@ export function useSession() {
   return {
     state,
     user,
+    initData,
     errorCode,
     errorMessage,
     displayName,

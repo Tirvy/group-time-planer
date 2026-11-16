@@ -53,6 +53,22 @@ pub async fn new_owner(bot: &Bot, pool: &SqlitePool, group_id: GroupId, group_na
     notify_owner(bot, pool, group_id, texts::notify_new_owner(group_name)).await;
 }
 
+pub async fn preferences_changed(
+    bot: &Bot,
+    pool: &SqlitePool,
+    group_id: GroupId,
+    group_name: &str,
+    member_name: &str,
+) {
+    notify_owner(
+        bot,
+        pool,
+        group_id,
+        texts::notify_preferences_changed(member_name, group_name),
+    )
+    .await;
+}
+
 /// Spawns independent deliveries; used after the group row (and its member
 /// list) has already been captured and deleted.
 pub fn group_deleted(bot: Bot, telegram_ids: Vec<TelegramId>, group_name: String) {

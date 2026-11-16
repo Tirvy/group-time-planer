@@ -2,12 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 
 import TimezoneSetup from './components/TimezoneSetup.vue'
+import GroupsView from './components/GroupsView.vue'
 import { useSession } from './composables/useSession'
 import { ru } from './i18n/ru'
 
 const {
   state,
   user,
+  initData,
   errorCode,
   errorMessage,
   displayName,
@@ -158,20 +160,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
             </v-card-text>
           </v-card>
 
-          <v-card variant="tonal" class="state-card">
-            <v-card-item>
-              <template #prepend>
-                <v-icon color="primary" size="28">mdi-calendar-week-outline</v-icon>
-              </template>
-              <v-card-title>{{ ru.home.calendarTitle }}</v-card-title>
-              <v-card-subtitle class="text-wrap">
-                {{ ru.home.calendarBody }}
-              </v-card-subtitle>
-            </v-card-item>
-            <v-card-text>
-              <p class="text-body-2 mb-0">{{ ru.home.calendarNote }}</p>
-            </v-card-text>
-          </v-card>
+          <GroupsView :init-data="initData" />
         </template>
       </v-container>
     </v-main>
