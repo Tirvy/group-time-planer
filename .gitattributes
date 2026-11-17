@@ -1,0 +1,5 @@
+# Keep container files LF so they run inside Linux images regardless of the
+# host OS checkout settings.
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-entrypoint.sh text eol=lf
