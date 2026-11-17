@@ -184,8 +184,11 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-for="(_, slot) in SLOTS_PER_DAY" :key="slot">
-        <div class="time-label" :class="{ 'time-label--hour': slot % 2 === 0 }">
-          {{ slot % 2 === 0 ? formatTime(slot * 30) : '' }}
+        <div
+          class="time-label"
+          :class="slot % 2 === 0 ? 'time-label--hour' : 'time-label--half'"
+        >
+          {{ formatTime(slot * 30) }}
         </div>
         <button
           v-for="(day, dayIndex) in DAYS"
@@ -251,6 +254,10 @@ onBeforeUnmount(() => {
 
 .time-label--hour {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.time-label--half {
+  color: rgba(var(--v-theme-on-surface), 0.3);
 }
 
 .slot {

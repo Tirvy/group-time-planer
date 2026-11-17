@@ -51,7 +51,7 @@ const days = computed(() =>
           aria-hidden="true"
         />
       </template>
-      <v-card-title class="text-h6">
+      <v-card-title class="text-title-large">
         {{ memberDisplayName(member) }}
       </v-card-title>
       <v-card-subtitle>
@@ -106,7 +106,7 @@ const days = computed(() =>
         >
           <div class="day-label">
             <span class="font-weight-medium">{{ day.short }}</span>
-            <span class="text-caption text-medium-emphasis">{{ day.date }}</span>
+            <span class="text-body-small text-medium-emphasis">{{ day.date }}</span>
           </div>
           <div class="day-segments">
             <span
@@ -119,7 +119,7 @@ const days = computed(() =>
             </span>
             <span
               v-if="day.segments.length === 0"
-              class="text-caption text-medium-emphasis"
+              class="text-body-small text-medium-emphasis"
             >
               {{ ru.planner.noSegments }}
             </span>
@@ -127,7 +127,7 @@ const days = computed(() =>
         </div>
       </div>
 
-      <p class="text-caption text-medium-emphasis mt-3 mb-0">
+      <p class="text-body-small text-medium-emphasis mt-3 mb-0">
         {{ ru.planner.legendBlank }} · {{ ru.planner.timezoneHint }}
       </p>
     </v-card-text>

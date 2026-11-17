@@ -30,7 +30,7 @@ const rows = computed(() =>
 <template>
   <v-card variant="tonal" class="calendar-card">
     <v-card-item>
-      <v-card-title class="text-h6">
+      <v-card-title class="text-title-large">
         {{ ru.planner.bestTimeTitle }}
       </v-card-title>
       <v-card-subtitle class="text-wrap">
@@ -97,10 +97,10 @@ const rows = computed(() =>
         >
           <span class="rank-number">{{ row.rank }}</span>
           <div class="rank-time">
-            <div class="text-body-2 font-weight-medium">
+            <div class="text-body-medium font-weight-medium">
               {{ row.dayLabel }}, {{ row.dateLabel }}
             </div>
-            <div class="text-caption text-medium-emphasis">
+            <div class="text-body-small text-medium-emphasis">
               {{ formatTime(row.start_minute) }}–{{ formatTime(row.end_minute) }}
             </div>
           </div>
@@ -110,7 +110,7 @@ const rows = computed(() =>
         </div>
       </div>
 
-      <p class="text-caption text-medium-emphasis mt-4 mb-0">
+      <p class="text-body-small text-medium-emphasis mt-4 mb-0">
         {{ ru.planner.bestNote }}
       </p>
     </v-card-text>

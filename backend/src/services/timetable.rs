@@ -7,19 +7,21 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::services::calendar::{CalendarMember, GroupCalendar};
 
-const WIDTH: u32 = 1000;
+const WIDTH: u32 = 700;
 const MARGIN: f32 = 28.0;
 const HEADER_H: f32 = 126.0;
 const GRID_TOP: f32 = HEADER_H + 18.0;
-const DAY_HEADER_H: f32 = 38.0;
-const ROW_H: f32 = 12.0;
-const TIME_W: f32 = 58.0;
+const DAY_HEADER_H: f32 = 40.0;
+const ROW_MINUTES: u16 = 30;
+const ROWS_PER_DAY: usize = 24 * 60 / ROW_MINUTES as usize;
+const ROW_H: f32 = 16.0;
+const TIME_W: f32 = 52.0;
 const DAY_W: f32 = (WIDTH as f32 - 2.0 * MARGIN - TIME_W) / 7.0;
-const GRID_H: f32 = 96.0 * ROW_H;
+const GRID_H: f32 = ROWS_PER_DAY as f32 * ROW_H;
 const LEGEND_GAP: f32 = 30.0;
 const LEGEND_ROW_H: f32 = 22.0;
-const FOOTER_H: f32 = 62.0;
-const DAY_SHORT: [&str; 7] = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const FOOTER_H: f32 = 80.0;
+const DAY_SHORT: [&str; 7] = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"];
 
 const BG: &str = "#0b0f19";
 const SURFACE: &str = "#141b2b";
@@ -97,9 +99,10 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     let grid_left = MARGIN + TIME_W;
     let grid_top = GRID_TOP + DAY_HEADER_H;
 
-    // Day headers
+    // Day headers: weekday and date on separate centered rows.
     for (day, short) in DAY_SHORT.iter().enumerate() {
         let x = grid_left + day as f32 * DAY_W;
+        let center_x = x + DAY_W / 2.0;
         let date = calendar.week.start_date + Duration::days(day as i64);
         let _ = write!(
             svg,
@@ -107,9 +110,13 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
         );
         let _ = write!(
             svg,
-            r#"<text x="{}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="12" font-weight="600" fill="{TEXT}">{short} {}</text>"#,
-            x + DAY_W / 2.0,
-            GRID_TOP + 16.0,
+            r#"<text x="{center_x}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="{TEXT}">{short}</text>"#,
+            GRID_TOP + 17.0
+        );
+        let _ = write!(
+            svg,
+            r#"<text x="{center_x}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="11" fill="{MUTED}">{}</text>"#,
+            GRID_TOP + 32.0,
             date.format("%d.%m")
         );
     }
@@ -121,10 +128,10 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
         DAY_W * 7.0
     );
 
-    for line in 0..=96 {
+    for line in 0..=ROWS_PER_DAY {
         let y = grid_top + line as f32 * ROW_H;
-        let color = if line % 4 == 0 { LINE_STRONG } else { LINE };
-        let width = if line % 4 == 0 { 1.0 } else { 0.5 };
+        let color = if line % 2 == 0 { LINE_STRONG } else { LINE };
+        let width = if line % 2 == 0 { 1.0 } else { 0.5 };
         let _ = write!(
             svg,
             r#"<line x1="{grid_left}" y1="{y}" x2="{}" y2="{y}" stroke="{color}" stroke-width="{width}"/>"#,
@@ -141,8 +148,9 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     }
 
     // Time labels every hour
+    let rows_per_hour = 60 / ROW_MINUTES as usize;
     for hour in 0..24 {
-        let row = hour * 4;
+        let row = hour * rows_per_hour;
         let y = grid_top + row as f32 * ROW_H + ROW_H - 1.0;
         let _ = write!(
             svg,
@@ -151,12 +159,12 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
         );
     }
 
-    // Member dots by 15-minute slice
-    let mut cells: Vec<Vec<Vec<usize>>> = vec![vec![Vec::new(); 96]; 7];
+    // Member dots by 30-minute slice
+    let mut cells: Vec<Vec<Vec<usize>>> = vec![vec![Vec::new(); ROWS_PER_DAY]; 7];
     for (index, member) in calendar.members.iter().enumerate() {
         for segment in &member.segments {
-            let first = usize::from(segment.start_minute / 15);
-            let last = usize::from(segment.end_minute.div_ceil(15)).min(96);
+            let first = usize::from(segment.start_minute / ROW_MINUTES);
+            let last = usize::from(segment.end_minute.div_ceil(ROW_MINUTES)).min(ROWS_PER_DAY);
             for slot in first..last {
                 if let Some(cell) = cells
                     .get_mut(usize::from(segment.day))
@@ -211,7 +219,7 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
             svg,
             r#"<text x="{}" y="{y}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="11" fill="{TEXT}">{}</text>"#,
             x + 16.0,
-            escape(&truncate(&member_name(member), 28))
+            escape(&truncate(&member_name(member), 18))
         );
         let role = if member.role.is_owner() {
             "владелец"
@@ -236,15 +244,20 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     }
 
     // Footer
-    let footer_y = height - 36.0;
+    let footer_y = height - 56.0;
     let _ = write!(
         svg,
         r#"<text x="{MARGIN}" y="{footer_y}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">Отмеченное время означает предпочтение, а не подтверждённую доступность.</text>"#
     );
     let _ = write!(
         svg,
-        r#"<text x="{MARGIN}" y="{}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">Участники без настроенного календаря отмечены в легенде; пустая клетка не означает недоступность.</text>"#,
+        r#"<text x="{MARGIN}" y="{}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">Участники без настроенного календаря отмечены в легенде;</text>"#,
         footer_y + 16.0
+    );
+    let _ = write!(
+        svg,
+        r#"<text x="{MARGIN}" y="{}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">пустая клетка не означает недоступность.</text>"#,
+        footer_y + 32.0
     );
     svg.push_str("</svg>");
 
@@ -409,6 +422,8 @@ mod tests {
         assert!(svg.contains("Иван Петров"));
         assert!(svg.contains("Пётр"));
         assert!(svg.contains("календарь не настроен"));
+        assert!(svg.contains(">ПН</text>"));
+        assert!(svg.contains(">16.11</text>"));
         assert!(svg.contains("Пустая клетка") || svg.contains("пустая клетка"));
     }
 

@@ -27,17 +27,6 @@ export function useSession() {
   const saveError = ref<string | null>(null)
 
   const errorMessage = computed(() => messageFor(errorCode.value))
-  const displayName = computed(() => {
-    const current = user.value
-    if (!current) return ''
-
-    const first = current.first_name?.trim() ?? ''
-    const last = current.last_name?.trim() ?? ''
-    if (first && last) return `${first} ${last}`
-    if (first) return first
-    if (current.username) return `@${current.username}`
-    return ru.common.memberFallback
-  })
   const timezoneRequired = computed(
     () => state.value === 'ready' && user.value !== null && !user.value.timezone_set,
   )
@@ -91,7 +80,6 @@ export function useSession() {
     initData,
     errorCode,
     errorMessage,
-    displayName,
     timezoneRequired,
     saving,
     saveError,

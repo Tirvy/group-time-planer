@@ -12,7 +12,6 @@ const {
   initData,
   errorCode,
   errorMessage,
-  displayName,
   timezoneRequired,
   saving,
   saveError,
@@ -55,22 +54,8 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
 
 <template>
   <v-app>
-    <v-app-bar flat color="background" density="comfortable">
-      <v-app-bar-title>
-        <div class="d-flex flex-column">
-          <span class="text-subtitle-1 font-weight-bold">{{ ru.app.title }}</span>
-          <span class="text-caption text-medium-emphasis">{{ ru.app.subtitle }}</span>
-        </div>
-      </v-app-bar-title>
-      <template v-if="state === 'ready' && user?.timezone_set">
-        <v-chip size="small" variant="tonal" color="primary" class="mr-3">
-          {{ user.timezone }}
-        </v-chip>
-      </template>
-    </v-app-bar>
-
     <v-main>
-      <v-container class="app-shell pt-4" max-width="560">
+      <v-container class="app-shell" max-width="560">
         <div
           v-if="state === 'loading'"
           class="d-flex flex-column align-center justify-center py-12"
@@ -78,7 +63,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
           aria-live="polite"
         >
           <v-progress-circular indeterminate color="primary" size="36" />
-          <p class="text-body-2 text-medium-emphasis mt-4 mb-0">
+          <p class="text-body-medium text-medium-emphasis mt-4 mb-0">
             {{ ru.auth.checking }}
           </p>
         </div>
@@ -106,7 +91,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
             <v-alert type="error" variant="tonal" density="comfortable" role="alert">
               {{ errorMessage }}
             </v-alert>
-            <p v-if="showReopenHint" class="text-caption text-medium-emphasis mt-3 mb-0">
+            <p v-if="showReopenHint" class="text-body-small text-medium-emphasis mt-3 mb-0">
               {{ ru.auth.expiredHint }}
             </p>
           </v-card-text>
@@ -128,36 +113,21 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
 
         <template v-else-if="state === 'ready' && user">
           <v-card variant="tonal" class="state-card mb-4">
-            <v-card-item>
-              <template #prepend>
-                <v-avatar color="primary" variant="tonal">
-                  <v-icon>mdi-account-check-outline</v-icon>
-                </v-avatar>
-              </template>
-              <v-card-title>{{ ru.home.greeting(displayName) }}</v-card-title>
-              <v-card-subtitle class="text-wrap">
-                {{ ru.home.profileNote }}
-              </v-card-subtitle>
-            </v-card-item>
-            <v-card-text>
-              <div class="text-caption text-medium-emphasis">
-                {{ ru.home.timezoneLabel }}
-              </div>
-              <div class="d-flex align-center flex-wrap ga-2 mt-1">
-                <v-chip color="primary" variant="tonal">
-                  {{ user.timezone }}
-                </v-chip>
-                <v-btn
-                  size="small"
-                  variant="text"
-                  color="primary"
-                  prepend-icon="mdi-clock-edit-outline"
-                  @click="openTimezoneEditor"
-                >
-                  {{ ru.home.changeTimezone }}
-                </v-btn>
-              </div>
-            </v-card-text>
+            <div class="d-flex align-center flex-wrap ga-2 px-4 py-2">
+              <span class="text-body-small text-medium-emphasis">
+                {{ user.timezone }}
+              </span>
+              <v-spacer />
+              <v-btn
+                size="small"
+                variant="text"
+                color="primary"
+                prepend-icon="mdi-clock-edit-outline"
+                @click="openTimezoneEditor"
+              >
+                {{ ru.home.changeTimezone }}
+              </v-btn>
+            </div>
           </v-card>
 
           <GroupsView :init-data="initData" />
@@ -183,6 +153,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
 
 <style scoped>
 .app-shell {
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
 }
 

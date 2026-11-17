@@ -76,7 +76,7 @@ function confirmChange(): void {
 <template>
   <v-card class="timezone-card" variant="flat">
     <v-card-item>
-      <v-card-title class="text-h6">
+      <v-card-title class="text-title-large">
         {{ isChange ? ru.timezone.changeTitle : ru.timezone.title }}
       </v-card-title>
       <v-card-subtitle class="text-wrap">
@@ -97,10 +97,10 @@ function confirmChange(): void {
       </v-alert>
 
       <template v-if="isChange">
-        <div class="text-caption text-medium-emphasis mb-1">
+        <div class="text-body-small text-medium-emphasis mb-1">
           {{ ru.timezone.current }}
         </div>
-        <div class="text-body-1 mb-4">
+        <div class="text-body-large mb-4">
           {{ props.current }}
           <span v-if="currentOffset" class="text-medium-emphasis">
             · {{ currentOffset }}
@@ -125,13 +125,13 @@ function confirmChange(): void {
         <v-chip size="small" color="primary" variant="tonal">
           {{ selected }}
         </v-chip>
-        <span v-if="selectedOffset" class="text-caption text-medium-emphasis">
+        <span v-if="selectedOffset" class="text-body-small text-medium-emphasis">
           {{ selectedOffset }}
         </span>
       </div>
 
       <div v-if="suggested" class="mt-4">
-        <div class="text-caption text-medium-emphasis">
+        <div class="text-body-small text-medium-emphasis">
           {{ ru.timezone.suggested }}: {{ suggested }}
         </div>
         <v-btn

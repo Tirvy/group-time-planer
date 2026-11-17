@@ -67,7 +67,7 @@ function cellLabel(dayIndex: number, slot: number): string {
 <template>
   <v-card variant="tonal" class="calendar-card">
     <v-card-item>
-      <v-card-title class="text-h6">
+      <v-card-title class="text-title-large">
         {{ ru.planner.combinedTitle }}
       </v-card-title>
       <v-card-subtitle class="text-wrap">
@@ -111,9 +111,12 @@ function cellLabel(dayIndex: number, slot: number): string {
           <template v-for="(_, slot) in READ_SLOTS_PER_DAY" :key="slot">
             <div
               class="time-label"
-              :class="{ 'time-label--hour': slot % 4 === 0 }"
+              :class="{
+                'time-label--hour': slot % 4 === 0,
+                'time-label--half': slot % 4 === 2,
+              }"
             >
-              {{ slot % 4 === 0 ? formatTime(slot * READ_SLOT_MINUTES) : '' }}
+              {{ slot % 2 === 0 ? formatTime(slot * READ_SLOT_MINUTES) : '' }}
             </div>
             <button
               v-for="(day, dayIndex) in DAYS"
@@ -136,13 +139,13 @@ function cellLabel(dayIndex: number, slot: number): string {
         </div>
       </div>
 
-      <p class="text-caption text-medium-emphasis mt-3 mb-0">
+      <p class="text-body-small text-medium-emphasis mt-3 mb-0">
         {{ ru.planner.legendBlank }} · {{ ru.planner.timezoneHint }}
       </p>
 
       <v-divider class="my-4" />
 
-      <div class="text-subtitle-2 mb-2">{{ ru.planner.membersTitle }}</div>
+      <div class="text-title-small mb-2">{{ ru.planner.membersTitle }}</div>
       <div class="legend-list">
         <div
           v-for="member in props.calendar.members"
@@ -154,8 +157,8 @@ function cellLabel(dayIndex: number, slot: number): string {
             :style="{ backgroundColor: member.color }"
             aria-hidden="true"
           />
-          <span class="text-body-2">{{ memberDisplayName(member) }}</span>
-          <span class="text-caption text-medium-emphasis">
+          <span class="text-body-medium">{{ memberDisplayName(member) }}</span>
+          <span class="text-body-small text-medium-emphasis">
             {{ memberRoleLabel(member) }}
           </span>
           <v-chip
@@ -179,10 +182,10 @@ function cellLabel(dayIndex: number, slot: number): string {
     <v-card>
       <v-card-title>{{ inspectionTitle }}</v-card-title>
       <v-card-text>
-        <p class="text-caption text-medium-emphasis mb-2">
+        <p class="text-body-small text-medium-emphasis mb-2">
           {{ ru.planner.membersPrefer }}
         </p>
-        <div v-if="inspectedMembers.length === 0" class="text-body-2">
+        <div v-if="inspectedMembers.length === 0" class="text-body-medium">
           {{ ru.planner.nobodyMarked }}
         </div>
         <v-list v-else density="compact" class="bg-transparent">
@@ -264,6 +267,10 @@ function cellLabel(dayIndex: number, slot: number): string {
 
 .time-label--hour {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.time-label--half {
+  color: rgba(var(--v-theme-on-surface), 0.3);
 }
 
 .read-cell {

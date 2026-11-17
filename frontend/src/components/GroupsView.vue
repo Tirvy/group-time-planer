@@ -384,10 +384,6 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
     saving.value = false
   }
 }
-
-function roleLabel(group: GroupDto): string {
-  return group.role === 'owner' ? ru.planner.owner : ru.planner.member
-}
 </script>
 
 <template>
@@ -399,7 +395,7 @@ function roleLabel(group: GroupDto): string {
       aria-live="polite"
     >
       <v-progress-circular indeterminate color="primary" />
-      <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+      <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
         {{ ru.planner.loadingGroups }}
       </p>
     </div>
@@ -465,24 +461,7 @@ function roleLabel(group: GroupDto): string {
               />
             </template>
             <v-card-title>{{ selected.name }}</v-card-title>
-            <v-card-subtitle>
-              {{ roleLabel(selected) }} ·
-              {{ ru.planner.participants(selected.member_count) }}
-            </v-card-subtitle>
           </v-card-item>
-          <v-card-text class="pt-1">
-            <v-chip
-              size="small"
-              :color="selected.setup_completed ? 'success' : 'warning'"
-              variant="tonal"
-            >
-              {{
-                selected.setup_completed
-                  ? ru.planner.setupCompletedShort
-                  : ru.planner.setupPendingShort
-              }}
-            </v-chip>
-          </v-card-text>
         </v-card>
 
         <div class="d-flex align-center flex-wrap ga-2 mb-3">
@@ -496,7 +475,7 @@ function roleLabel(group: GroupDto): string {
           >
             {{ pngLoading ? ru.planner.downloadingPng : ru.planner.downloadPng }}
           </v-btn>
-          <span v-if="pngError" class="text-caption text-error">
+          <span v-if="pngError" class="text-body-small error-text">
             {{ pngError }}
           </span>
         </div>
@@ -531,7 +510,7 @@ function roleLabel(group: GroupDto): string {
             aria-live="polite"
           >
             <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
               {{ ru.planner.loadingPreferences }}
             </p>
           </div>
@@ -570,7 +549,7 @@ function roleLabel(group: GroupDto): string {
             aria-live="polite"
           >
             <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
               {{ ru.planner.loadingCalendar }}
             </p>
           </div>
@@ -604,7 +583,7 @@ function roleLabel(group: GroupDto): string {
             aria-live="polite"
           >
             <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
               {{ ru.planner.loadingCalendar }}
             </p>
           </div>
@@ -627,7 +606,7 @@ function roleLabel(group: GroupDto): string {
             <template v-if="!selectedMember">
               <v-card variant="tonal" class="state-card">
                 <v-card-item>
-                  <v-card-title class="text-h6">
+                  <v-card-title class="text-title-large">
                     {{ ru.planner.membersTitle }}
                   </v-card-title>
                   <v-card-subtitle>
@@ -667,7 +646,7 @@ function roleLabel(group: GroupDto): string {
                 aria-live="polite"
               >
                 <v-progress-circular indeterminate color="primary" size="28" />
-                <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+                <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
                   {{ ru.planner.memberScheduleLoading }}
                 </p>
               </div>
@@ -706,7 +685,7 @@ function roleLabel(group: GroupDto): string {
             aria-live="polite"
           >
             <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-2 text-medium-emphasis mt-3 mb-0">
+            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
               {{ ru.planner.loadingCalendar }}
             </p>
           </div>
@@ -759,6 +738,10 @@ function roleLabel(group: GroupDto): string {
 <style scoped>
 .state-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.error-text {
+  color: rgb(var(--v-theme-error));
 }
 
 .group-color {

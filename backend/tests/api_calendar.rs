@@ -305,7 +305,7 @@ async fn timetable_png_is_rendered_from_the_same_calendar() {
 
     let width = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
     let height = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
-    assert_eq!(width, 2000, "2x render scale");
+    assert_eq!(width, 1400, "2x render scale");
     assert!(height > 1000);
 }
 

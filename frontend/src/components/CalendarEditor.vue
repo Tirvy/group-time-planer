@@ -72,11 +72,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 </script>
 
 <template>
-  <v-card variant="tonal" class="calendar-card">
+  <v-card
+    variant="tonal"
+    class="calendar-card"
+    :class="{ 'calendar-card--actions': dirty }"
+  >
     <v-card-item>
       <div class="d-flex align-center flex-wrap ga-2">
         <div>
-          <v-card-title class="text-h6">
+          <v-card-title class="text-title-large">
             {{ ru.planner.calendarTitle }}
           </v-card-title>
           <v-card-subtitle class="text-wrap">
@@ -136,43 +140,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
         {{ props.saveError }}
       </v-alert>
 
-      <div class="d-flex align-center flex-wrap ga-2 mb-3">
-        <v-btn
-          size="small"
-          variant="text"
-          prepend-icon="mdi-eraser"
-          :disabled="selectedSlots.length === 0 || props.saving"
-          @click="clearAll"
-        >
-          {{ ru.planner.clear }}
-        </v-btn>
-        <v-btn
-          size="small"
-          variant="text"
-          prepend-icon="mdi-undo"
-          :disabled="!dirty || props.saving"
-          @click="discard"
-        >
-          {{ ru.planner.discard }}
-        </v-btn>
-        <v-spacer />
-        <v-btn
-          size="small"
-          color="primary"
-          variant="flat"
-          prepend-icon="mdi-content-save-outline"
-          :loading="props.saving"
-          :disabled="!canSave"
-          @click="requestSave"
-        >
-          {{ props.saving ? ru.planner.saving : ru.planner.save }}
-        </v-btn>
-      </div>
-
-      <WeekGrid v-model="selectedSlots" :color="props.group.color" />
-
-      <div class="d-flex flex-wrap align-center ga-3 mt-3">
-        <span class="d-inline-flex align-center ga-2 text-caption">
+      <div class="d-flex flex-wrap align-center ga-3 mb-2">
+        <span class="d-inline-flex align-center ga-2 text-body-small">
           <span
             class="legend-swatch"
             :style="{ backgroundColor: props.group.color }"
@@ -180,21 +149,39 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
           />
           {{ ru.planner.legendSelected }}
         </span>
-        <span class="d-inline-flex align-center ga-2 text-caption text-medium-emphasis">
+        <span class="d-inline-flex align-center ga-2 text-body-small text-medium-emphasis">
           <span class="legend-swatch legend-swatch--blank" aria-hidden="true" />
           {{ ru.planner.legendBlank }}
         </span>
       </div>
 
-      <p class="text-caption text-medium-emphasis mt-2 mb-0">
+      <WeekGrid v-model="selectedSlots" :color="props.group.color" />
+
+      <p class="text-body-small text-medium-emphasis mt-2 mb-0">
         {{ ru.planner.hint }}
       </p>
+    </v-card-text>
+  </v-card>
 
-      <div class="d-flex align-center ga-2 mt-4">
+  <v-slide-y-transition>
+    <div
+      v-if="dirty"
+      class="action-bar"
+      role="toolbar"
+      :aria-label="ru.planner.unsaved"
+    >
+      <div class="action-bar__inner">
+        <v-btn
+          variant="text"
+          :disabled="selectedSlots.length === 0 || props.saving"
+          @click="clearAll"
+        >
+          {{ ru.planner.clear }}
+        </v-btn>
         <v-spacer />
         <v-btn
           variant="text"
-          :disabled="!dirty || props.saving"
+          :disabled="props.saving"
           @click="discard"
         >
           {{ ru.planner.discard }}
@@ -209,13 +196,38 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
           {{ props.saving ? ru.planner.saving : ru.planner.save }}
         </v-btn>
       </div>
-    </v-card-text>
-  </v-card>
+    </div>
+  </v-slide-y-transition>
 </template>
 
 <style scoped>
 .calendar-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.calendar-card--actions {
+  margin-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+}
+
+.action-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(var(--v-theme-surface), 0.96);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.action-bar__inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+  margin: 0 auto;
 }
 
 .legend-swatch {
