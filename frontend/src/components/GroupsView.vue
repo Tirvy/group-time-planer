@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
+
+import { mdiAccountGroupOutline, mdiChevronRight, mdiDownload, mdiRefresh } from '@mdi/js'
 
 import {
-  ApiError,
   fetchBestTime,
   fetchGroupCalendar,
   fetchGroups,
@@ -11,81 +12,111 @@ import {
   fetchTimetablePng,
   savePreferences,
 } from '../api/client'
+import { describeError } from '../api/errors'
+import { useAsyncResource } from '../composables/useAsyncResource'
 import { ru } from '../i18n/ru'
 import {
   memberDisplayName,
   memberRoleLabel,
   memberSetupLabel,
 } from '../planner/names'
-import type {
-  BestTimeResponse,
-  CalendarMember,
-  GroupCalendarResponse,
-  GroupDto,
-  MemberCalendarResponse,
-  PreferenceInterval,
-  PreferencesResponse,
-} from '../types/api'
-import BestTimeView from './BestTimeView.vue'
+import type { CalendarMember, GroupDto, PreferenceInterval } from '../types/api'
+import AsyncState from './AsyncState.vue'
 import CalendarEditor from './CalendarEditor.vue'
-import CombinedTimetable from './CombinedTimetable.vue'
-import MemberSchedule from './MemberSchedule.vue'
+
+// Read-only views are only needed after the user opens their tab; loading them
+// lazily keeps the initial Mini App bundle focused on the editor.
+const BestTimeView = defineAsyncComponent(() => import('./BestTimeView.vue'))
+const CombinedTimetable = defineAsyncComponent(
+  () => import('./CombinedTimetable.vue'),
+)
+const MemberSchedule = defineAsyncComponent(
+  () => import('./MemberSchedule.vue'),
+)
 
 const props = defineProps<{
   initData: string
 }>()
 
-const errorMessages: Record<string, string> = { ...ru.errors }
-
 const groups = ref<GroupDto[]>([])
 const selected = ref<GroupDto | null>(null)
-const preferences = ref<PreferencesResponse | null>(null)
 const loadingGroups = ref(true)
-const loadingPreferences = ref(false)
 const groupsError = ref<string | null>(null)
-const preferencesError = ref<string | null>(null)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 const dirty = ref(false)
 const pendingGroup = ref<GroupDto | null>(null)
 const discardOpen = ref(false)
 const snackbar = ref(false)
-let preferencesRequest = 0
 
 type GroupTab = 'mine' | 'combined' | 'members' | 'best'
 const activeTab = ref<GroupTab>('mine')
-const calendar = ref<GroupCalendarResponse | null>(null)
-const calendarLoading = ref(false)
-const calendarError = ref<string | null>(null)
-let calendarRequest = 0
+
+const {
+  data: preferences,
+  loading: loadingPreferences,
+  error: preferencesError,
+  run: runPreferences,
+  retry: retryPreferences,
+  reset: resetPreferences,
+} = useAsyncResource(
+  (groupId) => fetchPreferences(props.initData, groupId),
+  ru.planner.loadError,
+)
+const {
+  data: calendar,
+  loading: calendarLoading,
+  error: calendarError,
+  run: runCalendar,
+  retry: retryCalendar,
+  reset: resetCalendar,
+} = useAsyncResource(
+  (groupId) => fetchGroupCalendar(props.initData, groupId),
+  ru.planner.calendarLoadError,
+)
+const {
+  data: bestTime,
+  loading: bestTimeLoading,
+  error: bestTimeError,
+  run: runBestTime,
+  retry: retryBestTime,
+  reset: resetBestTime,
+} = useAsyncResource(
+  (groupId) => fetchBestTime(props.initData, groupId),
+  ru.planner.bestLoadError,
+)
+const {
+  data: memberCalendar,
+  loading: memberLoading,
+  error: memberError,
+  run: runMember,
+  retry: retryMemberResource,
+  reset: resetMember,
+} = useAsyncResource(
+  (key) => {
+    const separator = key.indexOf(':')
+    const groupId = key.slice(0, separator)
+    const memberId = key.slice(separator + 1)
+    return fetchMemberCalendar(props.initData, groupId, memberId)
+  },
+  ru.planner.memberScheduleError,
+)
+
 const selectedMember = ref<CalendarMember | null>(null)
-const memberCalendar = ref<MemberCalendarResponse | null>(null)
-const memberLoading = ref(false)
-const memberError = ref<string | null>(null)
-let memberRequest = 0
-const bestTime = ref<BestTimeResponse | null>(null)
-const bestTimeLoading = ref(false)
-const bestTimeError = ref<string | null>(null)
-let bestTimeRequest = 0
 const pngLoading = ref(false)
 const pngError = ref<string | null>(null)
 
 onMounted(loadGroups)
 
 watch(activeTab, (tab) => {
+  // Payloads are cached per group and invalidated by a save, so switching tabs
+  // must not trigger another expensive calendar calculation.
   if (tab === 'combined' || tab === 'members') {
-    void ensureCalendar(true)
+    ensureCalendar()
   } else if (tab === 'best') {
-    void ensureBestTime(true)
+    ensureBestTime()
   }
 })
-
-function messageFor(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    return errorMessages[error.code] ?? fallback
-  }
-  return fallback
-}
 
 async function loadGroups(): Promise<void> {
   loadingGroups.value = true
@@ -118,7 +149,7 @@ async function loadGroups(): Promise<void> {
       selected.value = refreshed ?? null
     }
   } catch (error) {
-    groupsError.value = messageFor(error, ru.planner.groupsLoadError)
+    groupsError.value = describeError(error, ru.planner.groupsLoadError)
   } finally {
     loadingGroups.value = false
   }
@@ -138,54 +169,17 @@ async function selectGroup(group: GroupDto, checkDirty = true): Promise<void> {
 
   selected.value = group
   preferences.value = null
-  preferencesError.value = null
   saveError.value = null
   dirty.value = false
   activeTab.value = 'mine'
-  calendar.value = null
-  calendarError.value = null
-  calendarLoading.value = false
-  calendarRequest += 1
+  resetPreferences()
+  resetCalendar()
+  resetBestTime()
+  resetMember()
   selectedMember.value = null
-  memberCalendar.value = null
-  memberError.value = null
-  memberLoading.value = false
-  memberRequest += 1
-  bestTime.value = null
-  bestTimeError.value = null
-  bestTimeLoading.value = false
-  bestTimeRequest += 1
   pngLoading.value = false
   pngError.value = null
-  await loadPreferences(group)
-}
-
-async function loadPreferences(group: GroupDto): Promise<void> {
-  const requestId = ++preferencesRequest
-  loadingPreferences.value = true
-  preferencesError.value = null
-
-  try {
-    const response = await fetchPreferences(props.initData, group.id)
-    if (
-      requestId !== preferencesRequest ||
-      selected.value?.id !== group.id
-    ) {
-      return
-    }
-    preferences.value = response
-  } catch (error) {
-    if (
-      requestId === preferencesRequest &&
-      selected.value?.id === group.id
-    ) {
-      preferencesError.value = messageFor(error, ru.planner.loadError)
-    }
-  } finally {
-    if (requestId === preferencesRequest) {
-      loadingPreferences.value = false
-    }
-  }
+  await runPreferences(group.id)
 }
 
 function requestGroupChange(id: string | null): void {
@@ -210,74 +204,29 @@ function cancelGroupChange(): void {
   pendingGroup.value = null
 }
 
-function retryPreferences(): void {
-  if (selected.value) {
-    void loadPreferences(selected.value)
-  }
-}
-
-async function ensureCalendar(force = false): Promise<void> {
+function retryPreferencesLoad(): void {
   const group = selected.value
-  if (!group) return
-  if (!force && calendar.value?.group.id === group.id) return
-  if (calendarLoading.value) return
-
-  const requestId = ++calendarRequest
-  calendarLoading.value = true
-  calendarError.value = null
-
-  try {
-    const response = await fetchGroupCalendar(props.initData, group.id)
-    if (requestId !== calendarRequest || selected.value?.id !== group.id) {
-      return
-    }
-    calendar.value = response
-  } catch (error) {
-    if (requestId === calendarRequest && selected.value?.id === group.id) {
-      calendarError.value = messageFor(error, ru.planner.calendarLoadError)
-    }
-  } finally {
-    if (requestId === calendarRequest) {
-      calendarLoading.value = false
-    }
-  }
+  if (group) void retryPreferences(group.id)
 }
 
-function retryCalendar(): void {
-  calendar.value = null
-  void ensureCalendar(true)
-}
-
-async function ensureBestTime(force = false): Promise<void> {
+function ensureCalendar(force = false): void {
   const group = selected.value
-  if (!group) return
-  if (!force && bestTime.value?.group.id === group.id) return
-  if (bestTimeLoading.value) return
-
-  const requestId = ++bestTimeRequest
-  bestTimeLoading.value = true
-  bestTimeError.value = null
-
-  try {
-    const response = await fetchBestTime(props.initData, group.id)
-    if (requestId !== bestTimeRequest || selected.value?.id !== group.id) {
-      return
-    }
-    bestTime.value = response
-  } catch (error) {
-    if (requestId === bestTimeRequest && selected.value?.id === group.id) {
-      bestTimeError.value = messageFor(error, ru.planner.bestLoadError)
-    }
-  } finally {
-    if (requestId === bestTimeRequest) {
-      bestTimeLoading.value = false
-    }
-  }
+  if (group) void runCalendar(group.id, force)
 }
 
-function retryBestTime(): void {
-  bestTime.value = null
-  void ensureBestTime(true)
+function ensureBestTime(force = false): void {
+  const group = selected.value
+  if (group) void runBestTime(group.id, force)
+}
+
+function retryCalendarLoad(): void {
+  const group = selected.value
+  if (group) void retryCalendar(group.id)
+}
+
+function retryBestTimeLoad(): void {
+  const group = selected.value
+  if (group) void retryBestTime(group.id)
 }
 
 async function downloadPng(): Promise<void> {
@@ -298,58 +247,34 @@ async function downloadPng(): Promise<void> {
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(url), 2000)
   } catch (error) {
-    pngError.value = messageFor(error, ru.planner.pngError)
+    pngError.value = describeError(error, ru.planner.pngError)
   } finally {
     pngLoading.value = false
   }
 }
 
-async function selectMember(member: CalendarMember): Promise<void> {
+function memberKey(groupId: string, memberId: string): string {
+  return `${groupId}:${memberId}`
+}
+
+function selectMember(member: CalendarMember): void {
   const group = selected.value
   if (!group) return
 
   selectedMember.value = member
-  memberCalendar.value = null
-  memberError.value = null
-  memberLoading.value = true
-  const requestId = ++memberRequest
-
-  try {
-    const response = await fetchMemberCalendar(
-      props.initData,
-      group.id,
-      member.user_id,
-    )
-    if (
-      requestId !== memberRequest ||
-      selected.value?.id !== group.id ||
-      selectedMember.value?.user_id !== member.user_id
-    ) {
-      return
-    }
-    memberCalendar.value = response
-  } catch (error) {
-    if (requestId === memberRequest) {
-      memberError.value = messageFor(error, ru.planner.memberScheduleError)
-    }
-  } finally {
-    if (requestId === memberRequest) {
-      memberLoading.value = false
-    }
-  }
+  void runMember(memberKey(group.id, member.user_id))
 }
 
 function backToMembers(): void {
-  memberRequest += 1
+  resetMember()
   selectedMember.value = null
-  memberCalendar.value = null
-  memberError.value = null
-  memberLoading.value = false
 }
 
 function retryMember(): void {
-  if (selectedMember.value) {
-    void selectMember(selectedMember.value)
+  const group = selected.value
+  const member = selectedMember.value
+  if (group && member) {
+    void retryMemberResource(memberKey(group.id, member.user_id))
   }
 }
 
@@ -370,16 +295,16 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
     if (selected.value?.id === group.id) {
       preferences.value = response
       selected.value = updated
-      calendar.value = null
-      bestTime.value = null
+      // Saved data invalidates every derived view for this group.
+      resetCalendar()
+      resetBestTime()
+      resetMember()
       selectedMember.value = null
-      memberCalendar.value = null
-      memberRequest += 1
       pngError.value = null
     }
     snackbar.value = true
   } catch (error) {
-    saveError.value = messageFor(error, ru.planner.saveError)
+    saveError.value = describeError(error, ru.planner.saveError)
   } finally {
     saving.value = false
   }
@@ -408,7 +333,7 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
       </v-card-text>
       <v-card-actions class="px-4 pb-4">
         <v-spacer />
-        <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="loadGroups">
+        <v-btn color="primary" variant="flat" :prepend-icon="mdiRefresh" @click="loadGroups">
           {{ ru.planner.retry }}
         </v-btn>
       </v-card-actions>
@@ -417,7 +342,7 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
     <v-card v-else-if="groups.length === 0" variant="tonal" class="state-card">
       <v-card-item>
         <template #prepend>
-          <v-icon color="primary" size="30">mdi-account-group-outline</v-icon>
+          <v-icon color="primary" size="30" :icon="mdiAccountGroupOutline" />
         </template>
         <v-card-title>{{ ru.planner.noGroupsTitle }}</v-card-title>
         <v-card-subtitle class="text-wrap">
@@ -469,7 +394,7 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
             size="small"
             variant="tonal"
             color="primary"
-            prepend-icon="mdi-download"
+            :prepend-icon="mdiDownload"
             :loading="pngLoading"
             @click="downloadPng"
           >
@@ -494,108 +419,45 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
         </v-tabs>
 
         <div v-show="activeTab === 'mine'">
-          <div
-            v-if="loadingPreferences"
-            class="d-flex flex-column align-center py-8"
-            role="status"
-            aria-live="polite"
+          <AsyncState
+            :loading="loadingPreferences"
+            :error="preferencesError"
+            :loading-text="ru.planner.loadingPreferences"
+            @retry="retryPreferencesLoad"
           >
-            <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
-              {{ ru.planner.loadingPreferences }}
-            </p>
-          </div>
-
-          <v-card v-else-if="preferencesError" variant="tonal" class="state-card">
-            <v-card-text>
-              <v-alert type="error" variant="tonal" density="comfortable" role="alert">
-                {{ preferencesError }}
-              </v-alert>
-            </v-card-text>
-            <v-card-actions class="px-4 pb-4">
-              <v-spacer />
-              <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="retryPreferences">
-                {{ ru.planner.retry }}
-              </v-btn>
-            </v-card-actions>
-          </v-card>
-
-          <CalendarEditor
-            v-else-if="preferences"
-            :key="selected.id"
-            :group="selected"
-            :preferences="preferences"
-            :saving="saving"
-            :save-error="saveError"
-            @save="handleSave"
-            @dirty="dirty = $event"
-          />
+            <CalendarEditor
+              v-if="preferences"
+              :key="selected.id"
+              :group="selected"
+              :preferences="preferences"
+              :saving="saving"
+              :save-error="saveError"
+              @save="handleSave"
+              @dirty="dirty = $event"
+            />
+          </AsyncState>
         </div>
 
         <template v-if="activeTab === 'combined'">
-          <div
-            v-if="calendarLoading"
-            class="d-flex flex-column align-center py-8"
-            role="status"
-            aria-live="polite"
+          <AsyncState
+            :loading="calendarLoading"
+            :error="calendarError"
+            :loading-text="ru.planner.loadingCalendar"
+            @retry="retryCalendarLoad"
           >
-            <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
-              {{ ru.planner.loadingCalendar }}
-            </p>
-          </div>
-
-          <v-card v-else-if="calendarError" variant="tonal" class="state-card">
-            <v-card-text>
-              <v-alert type="error" variant="tonal" density="comfortable" role="alert">
-                {{ calendarError }}
-              </v-alert>
-            </v-card-text>
-            <v-card-actions class="px-4 pb-4">
-              <v-spacer />
-              <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="retryCalendar">
-                {{ ru.planner.retry }}
-              </v-btn>
-            </v-card-actions>
-          </v-card>
-
-          <CombinedTimetable
-            v-else-if="calendar"
-            :calendar="calendar"
-            :dirty="dirty"
-          />
+            <CombinedTimetable v-if="calendar" :calendar="calendar" :dirty="dirty" />
+          </AsyncState>
         </template>
 
         <template v-if="activeTab === 'members'">
-          <div
-            v-if="calendarLoading"
-            class="d-flex flex-column align-center py-8"
-            role="status"
-            aria-live="polite"
+          <AsyncState
+            :loading="calendarLoading"
+            :error="calendarError"
+            :loading-text="ru.planner.loadingCalendar"
+            @retry="retryCalendarLoad"
           >
-            <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
-              {{ ru.planner.loadingCalendar }}
-            </p>
-          </div>
-
-          <v-card v-else-if="calendarError" variant="tonal" class="state-card">
-            <v-card-text>
-              <v-alert type="error" variant="tonal" density="comfortable" role="alert">
-                {{ calendarError }}
-              </v-alert>
-            </v-card-text>
-            <v-card-actions class="px-4 pb-4">
-              <v-spacer />
-              <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="retryCalendar">
-                {{ ru.planner.retry }}
-              </v-btn>
-            </v-card-actions>
-          </v-card>
-
-          <template v-else-if="calendar">
-            <template v-if="!selectedMember">
-              <v-card variant="tonal" class="state-card">
+            <template v-if="calendar">
+              <v-card v-if="!selectedMember" variant="tonal" class="state-card">
                 <v-card-item>
                   <v-card-title class="text-title-large">
                     {{ ru.planner.membersTitle }}
@@ -622,84 +484,43 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
                       {{ memberRoleLabel(member) }} · {{ memberSetupLabel(member) }}
                     </v-list-item-subtitle>
                     <template #append>
-                      <v-icon>mdi-chevron-right</v-icon>
+                      <v-icon :icon="mdiChevronRight" />
                     </template>
                   </v-list-item>
                 </v-list>
               </v-card>
-            </template>
 
-            <template v-else>
-              <div
-                v-if="memberLoading"
-                class="d-flex flex-column align-center py-8"
-                role="status"
-                aria-live="polite"
+              <AsyncState
+                v-else
+                :loading="memberLoading"
+                :error="memberError"
+                :loading-text="ru.planner.memberScheduleLoading"
+                @retry="retryMember"
               >
-                <v-progress-circular indeterminate color="primary" size="28" />
-                <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
-                  {{ ru.planner.memberScheduleLoading }}
-                </p>
-              </div>
-
-              <v-card v-else-if="memberError" variant="tonal" class="state-card">
-                <v-card-text>
-                  <v-alert type="error" variant="tonal" density="comfortable" role="alert">
-                    {{ memberError }}
-                  </v-alert>
-                </v-card-text>
-                <v-card-actions class="px-4 pb-4">
+                <template #error-actions>
                   <v-btn variant="text" @click="backToMembers">
                     {{ ru.planner.backToMembers }}
                   </v-btn>
-                  <v-spacer />
-                  <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="retryMember">
-                    {{ ru.planner.retry }}
-                  </v-btn>
-                </v-card-actions>
-              </v-card>
-
-              <MemberSchedule
-                v-else-if="memberCalendar"
-                :response="memberCalendar"
-                @back="backToMembers"
-              />
+                </template>
+                <MemberSchedule
+                  v-if="memberCalendar"
+                  :response="memberCalendar"
+                  @back="backToMembers"
+                />
+              </AsyncState>
             </template>
-          </template>
+          </AsyncState>
         </template>
 
         <template v-if="activeTab === 'best'">
-          <div
-            v-if="bestTimeLoading"
-            class="d-flex flex-column align-center py-8"
-            role="status"
-            aria-live="polite"
+          <AsyncState
+            :loading="bestTimeLoading"
+            :error="bestTimeError"
+            :loading-text="ru.planner.loadingBest"
+            @retry="retryBestTimeLoad"
           >
-            <v-progress-circular indeterminate color="primary" size="28" />
-            <p class="text-body-medium text-medium-emphasis mt-3 mb-0">
-              {{ ru.planner.loadingCalendar }}
-            </p>
-          </div>
-
-          <v-card v-else-if="bestTimeError" variant="tonal" class="state-card">
-            <v-card-text>
-              <v-alert type="error" variant="tonal" density="comfortable" role="alert">
-                {{ bestTimeError }}
-              </v-alert>
-            </v-card-text>
-            <v-card-actions class="px-4 pb-4">
-              <v-spacer />
-              <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="retryBestTime">
-                {{ ru.planner.retry }}
-              </v-btn>
-            </v-card-actions>
-          </v-card>
-
-          <BestTimeView
-            v-else-if="bestTime"
-            :best-time="bestTime"
-            :dirty="dirty"
-          />
+            <BestTimeView v-if="bestTime" :best-time="bestTime" :dirty="dirty" />
+          </AsyncState>
         </template>
       </template>
     </template>
@@ -728,11 +549,11 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
 
 <style scoped>
 .state-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--app-border);
 }
 
 .planner-tabs {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .planner-tabs :deep(.v-tab) {

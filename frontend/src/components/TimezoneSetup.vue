@@ -193,6 +193,6 @@ function confirmChange(): void {
 
 <style scoped>
 .timezone-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--app-border);
 }
 </style>

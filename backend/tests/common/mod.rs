@@ -135,6 +135,7 @@ pub fn test_router_with_clock(
         auth,
         bot: None,
         clock,
+        png: std::sync::Arc::new(api::PngCache::new()),
     })
 }
 

@@ -13,17 +13,18 @@ use crate::{
         calendar::{self, CalendarError},
         groups::GroupError,
         members::MembersError,
-        preferences::PreferencesError,
     },
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct GroupInfoDto {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct ReferenceWeekDto {
     pub start_date: String,
     pub end_date: String,
@@ -31,7 +32,8 @@ pub struct ReferenceWeekDto {
     pub end: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct CalendarSegmentDto {
     pub day: u8,
     pub start_minute: u16,
@@ -40,19 +42,25 @@ pub struct CalendarSegmentDto {
     pub end: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct CalendarMemberDto {
     pub user_id: String,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub username: Option<String>,
+    #[ts(type = "\"owner\" | \"member\"")]
     pub role: &'static str,
     pub color: String,
+    /// The member's own IANA timezone, when configured.
+    pub timezone: Option<String>,
+    #[ts(type = "\"pending\" | \"completed\"")]
     pub setup_state: &'static str,
     pub segments: Vec<CalendarSegmentDto>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct GroupCalendarResponse {
     pub group: GroupInfoDto,
     pub viewer_timezone: String,
@@ -60,7 +68,8 @@ pub struct GroupCalendarResponse {
     pub members: Vec<CalendarMemberDto>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct MemberCalendarResponse {
     pub group: GroupInfoDto,
     pub viewer_timezone: String,
@@ -153,6 +162,7 @@ fn member_dto(member: calendar::CalendarMember, timezone: IanaTimezone) -> Calen
         username: member.username,
         role: member.role.as_db(),
         color: member.color,
+        timezone: member.timezone,
         setup_state: member.setup_state.as_str(),
         segments: member
             .segments
@@ -204,11 +214,6 @@ pub(crate) fn map_calendar_error(error: CalendarError) -> ApiError {
         CalendarError::Members(MembersError::NotAMember(_)) => ApiError::not_a_member(),
         CalendarError::Members(_) => {
             tracing::error!("calendar member lookup failed");
-            ApiError::internal()
-        }
-        CalendarError::Preferences(PreferencesError::NotAMember(_)) => ApiError::not_a_member(),
-        CalendarError::Preferences(_) => {
-            tracing::error!("calendar preferences lookup failed");
             ApiError::internal()
         }
         CalendarError::MemberNotFound(_) => ApiError::member_not_found(),

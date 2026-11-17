@@ -1,16 +1,20 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
 use axum::Router;
 use raid_scheduler_backend::{
-    api::{self, AppState},
+    api::{self, AppState, PngCache},
     auth::AuthSettings,
     bot,
     config::Config,
     db,
-    services::clock::SystemClock,
+    services::clock::{Clock, SystemClock},
 };
 use tower_http::{
+    compression::{
+        CompressionLayer,
+        predicate::{DefaultPredicate, NotForContentType, Predicate},
+    },
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
@@ -38,7 +42,8 @@ async fn main() -> anyhow::Result<()> {
         .context("failed to apply database migrations")?;
     tracing::info!("database migrations applied");
 
-    let bot = start_telegram_bot(&config, &pool);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let bot_task = start_telegram_bot(&config, &pool, clock.clone());
 
     let state = AppState {
         db: pool.clone(),
@@ -46,10 +51,12 @@ async fn main() -> anyhow::Result<()> {
             bot_token: config.telegram_bot_token.clone(),
             max_age: config.init_data_max_age,
         },
-        bot,
-        clock: std::sync::Arc::new(SystemClock),
+        bot: bot_task.as_ref().map(|(bot, _)| bot.clone()),
+        clock,
+        png: Arc::new(PngCache::new()),
     };
     let app = with_static_frontend(api::router(state), &config.frontend_dist)
+        .layer(compression_layer())
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
@@ -61,6 +68,12 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("HTTP server error")?;
+
+    // Stop long polling before the pool closes so the bot cannot race startup
+    // state or use a closed database.
+    if let Some((_, handle)) = bot_task {
+        handle.abort();
+    }
 
     // Closing the pool flushes WAL state cleanly on normal shutdown. It never
     // deletes the database file.
@@ -84,7 +97,11 @@ fn log_startup(config: &Config) {
 ///
 /// Long polling is enough for the MVP and avoids exposing a webhook endpoint.
 /// The token is never logged; `Config` redacts it in `Debug` output.
-fn start_telegram_bot(config: &Config, pool: &sqlx::SqlitePool) -> Option<teloxide::Bot> {
+fn start_telegram_bot(
+    config: &Config,
+    pool: &sqlx::SqlitePool,
+    clock: Arc<dyn Clock>,
+) -> Option<(teloxide::Bot, tokio::task::JoinHandle<()>)> {
     let Some(token) = config.telegram_bot_token.clone() else {
         tracing::warn!("TELOXIDE_TOKEN is not set; Telegram bot is disabled");
         return None;
@@ -95,12 +112,13 @@ fn start_telegram_bot(config: &Config, pool: &sqlx::SqlitePool) -> Option<teloxi
     let bot_pool = pool.clone();
     let bot_settings = bot::BotSettings {
         public_base_url: config.public_base_url.clone(),
+        clock,
     };
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         bot::run(polling_bot, bot_pool, bot_settings).await;
     });
     tracing::info!("Telegram bot enabled (long polling)");
-    Some(bot)
+    Some((bot, handle))
 }
 
 /// Serves the Vite build when present. Missing builds are tolerated so the API
@@ -117,6 +135,13 @@ fn with_static_frontend(router: Router, dist: &Path) -> Router {
         );
         router
     }
+}
+
+/// Compresses API JSON and text assets. Images and already-compressed fonts are
+/// skipped so CPU is not spent on incompressible payloads.
+fn compression_layer() -> CompressionLayer<impl Predicate> {
+    CompressionLayer::new()
+        .compress_when(DefaultPredicate::new().and(NotForContentType::const_new("font/")))
 }
 
 async fn shutdown_signal() {

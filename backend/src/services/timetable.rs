@@ -231,7 +231,7 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     let footer_y = height - 56.0;
     let _ = write!(
         svg,
-        r#"<text x="{MARGIN}" y="{footer_y}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">Отмеченное время означает предпочтение, а не подтверждённую доступность.</text>"#
+        r#"<text x="{MARGIN}" y="{footer_y}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">Отмеченное время означает доступность участника.</text>"#
     );
     let _ = write!(
         svg,
@@ -240,7 +240,7 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     );
     let _ = write!(
         svg,
-        r#"<text x="{MARGIN}" y="{}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">пустая клетка не означает недоступность.</text>"#,
+        r#"<text x="{MARGIN}" y="{}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="10" fill="{MUTED}">Пустая клетка означает недоступность.</text>"#,
         footer_y + 32.0
     );
     svg.push_str("</svg>");
@@ -404,6 +404,7 @@ mod tests {
                     username: None,
                     role: MemberRole::Owner,
                     color: "#4DD0E1".to_owned(),
+                    timezone: Some("Europe/Berlin".to_owned()),
                     setup_state: SetupState::Completed,
                     segments,
                 },
@@ -414,6 +415,7 @@ mod tests {
                     username: None,
                     role: MemberRole::Member,
                     color: "#7E57C2".to_owned(),
+                    timezone: Some("Asia/Tbilisi".to_owned()),
                     setup_state: SetupState::Pending,
                     segments: Vec::new(),
                 },

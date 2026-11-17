@@ -1,9 +1,9 @@
 # Raid Scheduler
 
-Telegram bot + Telegram Mini App for coordinating recurring weekly group availability preferences. The initial example is organizing a regular World of Warcraft Mythic+ group, but the product is game-agnostic.
+Telegram bot + Telegram Mini App for coordinating recurring weekly group availability. The initial example is organizing a regular World of Warcraft Mythic+ group, but the product is game-agnostic.
 
 ## Product in one sentence
-A group shares a recurring weekly calendar where each member marks times they **prefer**, sees everyone's individual preferences in their own timezone, and gets a ranked view of popular times.
+A group shares a recurring weekly calendar where each member marks when they are **available**, sees everyone's individual availability in their own timezone, and gets a ranked view of the best overlapping times.
 
 ## Documentation map
 - [`docs/01-product-requirements.md`](docs/01-product-requirements.md): scope, terminology, product rules.
@@ -27,15 +27,15 @@ A group shares a recurring weekly calendar where each member marks times they **
 - Maximum 20 members per group.
 - Click and drag calendar editing.
 - Members can view every member's individual calendar.
-- Timetable PNG generated from SVG; `/besttime` ranks preferences, not guaranteed availability.
+- Timetable PNG generated from SVG; `/besttime` ranks declared availability for the reference week.
 - No automated database backup feature in MVP.
 
 ## Important product language
-A selected slot means **preferred**. An unselected slot means **no stated preference**, not unavailable. The product must never label the result as confirmed availability.
+A selected slot means the member is **available**. An unselected slot means **unavailable**. The ranking reflects what members declared for the week; it is not a live presence check.
 
 ## Development
 
-Requirements: Rust 1.90+, Node.js 22.12+.
+Requirements: Rust 1.90+, Node.js 24+.
 
 ```bash
 # 1. Backend (from the repository root)
@@ -61,9 +61,11 @@ Checks:
 ```bash
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo test
+cargo test                       # also regenerates frontend/src/types/generated
 cd frontend && npm run typecheck && npm test && npm run build
 ```
+
+API response types are generated from the Rust DTOs with `ts-rs`. Run `cargo test` after changing a DTO and commit the updated files under `frontend/src/types/generated/`; CI fails when they are stale.
 
 ### Telegram bot
 - Put the token from @BotFather into `TELOXIDE_TOKEN` in `.env` or the environment. Without a token the backend runs API-only and logs a warning.
@@ -80,11 +82,12 @@ cd frontend && npm run typecheck && npm test && npm run build
 - API endpoints in this phase: `POST /api/auth/telegram`, `GET /api/me`, `PUT /api/me/timezone`, `GET /api/groups`, `GET /api/groups/{group_id}/preferences`, `PUT /api/groups/{group_id}/preferences`, `GET /api/groups/{group_id}/calendar`, `GET /api/groups/{group_id}/members/{member_id}/calendar`, `GET /api/groups/{group_id}/best-time`, `GET /api/groups/{group_id}/timetable.png`.
 - On the first calendar opening the Mini App requires an explicit IANA timezone choice. The same timezone interprets the user's recurring preferences and displays schedules. Changing it later requires a confirmation that explains both effects.
 - The Mini App lists the user's groups, lets them choose one explicitly when several exist, and shows a Monday–Sunday 30-minute grid. Tap toggles a slot; pointer drag paints or erases a range. Vertical touch scrolling is preserved, and keyboard activation works.
-- Selected slots mean **preferred**. Empty slots mean **no stated preference**, not unavailable. Saving an empty calendar is valid and marks setup completed; the UI distinguishes pending setup from completed-empty.
+- Selected slots mean **available**; empty slots mean **unavailable**. Saving an empty calendar is valid and marks setup completed (the member is unavailable all week); the UI distinguishes pending setup from completed-empty.
 - Selected cells use the member's stable group color. The owner receives a best-effort notification when a non-owner's saved preferences change.
-- The combined view converts every member's recurring intervals into actual instants for the upcoming Monday–Sunday in the viewer's timezone, then shows 15-minute viewer slices with member color dots. The individual member view lists exact converted time ranges by day. The reference-week dates and viewer timezone are always shown.
+- The combined view converts every member's recurring intervals into actual instants for the upcoming Monday–Sunday in the viewer's timezone, then shows 15-minute viewer slices with member color dots. The individual member view lists exact converted time ranges by day and shows the member's own timezone and current offset. The reference-week dates and viewer timezone are always shown.
+- The Mini App follows Telegram's light/dark theme, including theme changes while it is open. Icons are inline SVG paths and the read-only tabs are lazy-loaded, keeping the transferred payload small.
 - DST policy: ambiguous local times use the earlier offset; nonexistent local times advance by the gap. Converted segments are split at viewer DST boundaries so wall-clock ranges stay ordered.
-- The best-time ranking counts configured members whose converted interval fully covers each boundary range. Pending members are excluded; completed members with an empty calendar stay in the denominator. Adjacent ranges with the same count are merged, and the result is labelled as preferences, not availability.
+- The best-time ranking counts configured members whose converted interval fully covers each boundary range. Pending members are excluded; completed members with an empty calendar stay in the denominator. Adjacent ranges with the same count and the same members are merged, each range lists which members are available, and the list can be filtered to ranges with at least two members.
 - `/timetable` and `…/timetable.png` render the same converted calendar model as the interactive combined view to PNG using `resvg`. Russian text requires system fonts on the deployment host (for example `fonts-dejavu-core` on Linux).
 - Outside Telegram the UI shows an "open via Telegram" state; there is no development auth bypass.
 - The Mini App requires HTTPS in production. Set the Mini App URL in @BotFather to the HTTPS origin served by the backend.

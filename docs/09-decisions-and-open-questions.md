@@ -16,18 +16,19 @@ Rules:
 
 ## 2. Locked product decisions
 
-### 2.1 Preference semantics
-- A selected slot means **preferred**.
-- An unselected slot means **no stated preference**, never "unavailable" or
-  "busy". Blank timetable space is not proof of unavailability.
+### 2.1 Availability semantics
+- A selected slot means the member is **available**.
+- An unselected slot means the member is **unavailable**. A blank cell is an
+  explicit negative statement, so the UI may say "недоступно" for it.
 - `setup_pending` means `setup_completed_at IS NULL` (no successful save yet).
+  A pending member's availability is unknown, not "unavailable everywhere".
 - `setup_completed` means at least one save succeeded, including a save with
-  **zero** intervals. Empty means "intentionally no preferred times".
+  **zero** intervals. Empty means "intentionally unavailable all week".
 - Pending members are excluded from best-time counts and denominators.
-  Completed members with zero intervals count as configured and contribute zero
-  preferences.
-- Best-time output is a preference ranking, never confirmed availability or an
-  automatic booking recommendation.
+  Completed members with zero intervals count as configured and contribute no
+  available time.
+- Best-time output ranks declared weekly availability. It is not a live
+  presence check and not an automatic booking recommendation.
 
 ### 2.2 Calendar model
 - Recurring weekly calendar, Monday through Sunday.
@@ -53,6 +54,8 @@ Rules:
 - The reference week is the upcoming Monday–Sunday in the **viewer's** timezone.
   If the current local day is Monday, the week starts today (current week, not
   next week).
+- The reference week is fixed to the current week for the MVP. A "current /
+  next week" switch is intentionally deferred (see open question 10).
 - Each member's recurring local intervals are expanded into actual instants for
   that reference week using IANA rules, then converted to the viewer's timezone.
   Raw weekday/minute values must never be compared across timezones for ranking.
@@ -71,8 +74,8 @@ Rules:
 - Ownership transfer keeps the previous owner as a regular member.
 - There is exactly one owner per group, consistent between the group record and
   membership roles.
-- Owner capabilities: rename group, manage invitations, transfer ownership,
-  delete group, view all schedules.
+- Owner capabilities: manage invitations, transfer ownership, delete group,
+  view all schedules.
 - Member capabilities: edit own preferences, view all group calendars, leave.
 - Every member can view every member's individual calendar; other members'
   calendars are read-only and the viewer's own calendar is visually distinct.
@@ -165,7 +168,7 @@ Rules:
 | Conversion | Recurring local intervals are expanded to reference-week instants, clipped to the week, then split at viewer midnight and viewer DST transitions | 2026-11-16 |
 | Combined read grid | 15-minute slices in the viewer timezone so offset conversions such as :15/:45 remain accurate; each slice shows member color dots and is inspectable | 2026-11-16 |
 | Clock | A single injected `Clock` abstraction supplies "now" to reference-week calculation; tests use a fixed clock | 2026-11-16 |
-| Best-time ranking | Boundary ranges from converted segments; a member counts only when their interval fully covers a range; pending excluded; completed-empty stays in the denominator; adjacent equal counts merge; results sorted by count | 2026-11-16 |
+| Best-time ranking | Boundary ranges from converted segments; a member counts only when their interval fully covers a range; pending excluded; completed-empty stays in the denominator; adjacent ranges with the same count and the same members merge; results sorted by count | 2026-11-16 |
 | PNG timetable | Rendered from the same converted calendar model with `resvg`; 15-minute dots, group name, reference week, timezone, generation timestamp, member legend and pending indicators | 2026-11-16 |
 | PNG fonts | System fonts are loaded through `fontdb`; deployment hosts must provide Cyrillic-capable fonts | 2026-11-16 |
 | Deployment | Docker Compose runs the backend plus Caddy for automatic HTTPS; `./data` is bind-mounted and the process runs as UID 10001 | 2026-11-16 |
@@ -175,6 +178,18 @@ Rules:
 | Telegram IDs | Stored internally as signed 64-bit integers, exposed as JSON strings | 2026-11-16 |
 | Group name | Trimmed, non-empty, **1–64 characters** | 2026-11-16 |
 | Russian copy | Centralized; no scattered literals in components or handlers | 2026-11-16 |
+| Availability semantics | Selected slot = member is available; unselected = unavailable; pending members are unknown rather than unavailable; completed-empty = unavailable all week | 2026-11-17 |
+| Read authentication | Per-request auth validates `initData` and reads the user row; profile metadata is refreshed only by `POST /api/auth/telegram`, so reads never take the SQLite writer lock | 2026-11-17 |
+| Calendar loading | A single member/preference join feeds the calendar, best-time and PNG views; calendar endpoints issue two queries regardless of group size | 2026-11-17 |
+| Mini App caching | Per-group calendar and best-time payloads are cached in the client and invalidated only by a save; tab switches never refetch | 2026-11-17 |
+| HTTP compression | `CompressionLayer` (gzip/brotli) compresses JSON and text; images and fonts are skipped | 2026-11-17 |
+| PNG rendering | Content-keyed 60-second cache (16 entries) plus a 2-permit render semaphore | 2026-11-17 |
+| Best-time detail | Each ranked range lists the member IDs available for the whole range; the Mini App shows them in a tap-to-open dialog | 2026-11-17 |
+| Frontend bundle | Icons come from `@mdi/js` SVG paths (no icon webfont); Roboto is limited to Latin and Cyrillic subsets; read-only tabs are lazy-loaded | 2026-11-17 |
+| Telegram theme | The Mini App follows `colorScheme`/`themeParams` and reacts to `themeChanged`; light and dark Vuetify themes share CSS variables for grid and border colors | 2026-11-17 |
+| Frontend tests | Vitest with `@vue/test-utils` and happy-dom covers the grid interaction, API client, async resource, session and theme resolution | 2026-11-17 |
+| API types | Response DTOs derive `ts_rs::TS`; the TypeScript bindings in `frontend/src/types/generated/` are generated by `cargo test` and CI fails when they are stale | 2026-11-17 |
+| Rename | Group renaming is out of scope; the unused service function was removed | 2026-11-17 |
 
 ### 3.1 DST conversion policy
 
@@ -209,14 +224,15 @@ the related phase is marked done.
 | 7 | Deployment target: Docker Compose or systemd | 8 | Both acceptable per architecture; document the chosen one |
 | 8 | Should the bot remember the active group across restarts? | post-MVP | In-memory selection; the user is asked to choose again after a restart |
 | 9 | What should the default invitation lifetime be? | post-MVP | No expiry by default; the owner can revoke the invitation at any time |
+| 10 | Week navigation: let the user switch between the current and the next reference week | backlog | Current week only; needs design for navigation, caching and the "Monday" edge case |
 
 ## 5. Explicitly out of scope
 
 No WoW API integration, character or role management, dungeon readiness checks,
 automatic event booking, attendance tracking, reminders, recurring event
-creation, hard-unavailable/busy slots, moderator roles, calendar integrations,
-historical analytics, PostgreSQL, Redis, message brokers, microservices,
-Kubernetes, Nuxt SSR, or **automated database backups**.
+creation, moderator roles, calendar integrations, historical analytics,
+PostgreSQL, Redis, message brokers, microservices, Kubernetes, Nuxt SSR, or
+**automated database backups**.
 
 ## 6. Change log
 
@@ -233,3 +249,8 @@ Kubernetes, Nuxt SSR, or **automated database backups**.
 | 2026-11-16 | Phase 8: added the `/calendar` Web App entry point, `PUBLIC_BASE_URL` configuration, Docker/Caddy deployment with persistent data, CI, Russian-copy cleanup, and deployment/no-backup documentation. |
 | 2026-11-16 | Group creation now returns a reusable invitation deep link immediately; if the link cannot be built, group creation still succeeds and suggests `/invite`. |
 | 2026-11-16 | Disabled Telegram link previews for every bot text message and notification so user-controlled group names cannot embed external media. |
+| 2026-11-17 | Changed the product semantics: an unselected slot now means **unavailable**, not "no stated preference". Updated all bot, Mini App, PNG and documentation copy, and removed hard-unavailable slots from the out-of-scope list. |
+| 2026-11-17 | Removed the unreachable group-rename service and its docs; added week navigation (current/next week) to the backlog as open question 10. |
+| 2026-11-17 | Backend performance: read-only authentication path, one-query member/preference loading, bulk preference insert, HTTP compression, and a bounded PNG render cache with a concurrency limit. |
+| 2026-11-17 | Maintainability: `sqlx::FromRow` row structs replaced tuple queries; `GroupsView` was split into `useAsyncResource` plus a shared `AsyncState` component; error-code mapping is centralized in `api/errors.ts`; API response types are generated with `ts-rs` and checked in CI. |
+| 2026-11-17 | Mini App UI: best-time list gained a "2+ members" filter, a collapsed view and a tap-to-open member dialog; the app follows the Telegram theme; member schedules show the member's own timezone and offset; the icon/font payload dropped from 5.1 MB to under 1 MB and read-only tabs are lazy-loaded. |

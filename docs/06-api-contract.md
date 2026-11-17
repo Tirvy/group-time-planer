@@ -25,7 +25,7 @@ Returns groups for authenticated user, role, member count, own setup status and 
 Requires membership. Returns group summary and members, subject to product visibility rules.
 
 ### `GET /api/groups/{group_id}/calendar`
-Requires membership and configured user timezone. Returns upcoming Monday–Sunday reference week, viewer timezone, member summaries, and converted interval/cell data for all members. Include each member's setup status and stable color. Other members' calendars are read-only.
+Requires membership and configured user timezone. Returns upcoming Monday–Sunday reference week, viewer timezone, member summaries (including each member's IANA timezone), and converted interval/cell data for all members. Include each member's setup status and stable color. Other members' calendars are read-only.
 
 ### `GET /api/groups/{group_id}/members/{user_id}/calendar`
 Requires membership in group; target must be current member. Returns that member's preferences converted into viewer timezone and setup state.
@@ -34,7 +34,7 @@ Requires membership in group; target must be current member. Returns that member
 Requires membership and configured timezone. Request contains local recurring intervals, e.g. `{ "intervals": [{"weekday":1,"start_minute":1080,"end_minute":1200}] }`. Backend always saves for authenticated user, never a user ID supplied by client. Validate, normalize and replace atomically. Empty list is valid and marks setup completed.
 
 ### `GET /api/groups/{group_id}/best-time`
-Requires membership and configured timezone. Returns ranked preferred intervals for the upcoming reference week, converted to viewer timezone. Include count and configured-member count; label as preferences, not availability.
+Requires membership and configured timezone. Returns ranked available intervals for the upcoming reference week, converted to viewer timezone. Include count, configured-member count and the members available in each range; label as declared availability, not a live check.
 
 ### `GET /api/groups/{group_id}/timetable.png`
 Requires membership and configured timezone. Returns PNG generated from same timetable view model used by interactive calendar. Optionally support an endpoint returning SVG for debugging, but do not expose unnecessary formats by default.
@@ -60,9 +60,6 @@ Member only, except current owner. Remove membership and scoped preferences. Own
 ### `DELETE /api/groups/{group_id}`
 Owner only. Explicit confirmation at UI level; backend rechecks owner.
 
-### `PATCH /api/groups/{group_id}`
-Owner only; rename group.
-
 ## 3. Response conventions
 - Use stable machine-readable error codes, e.g. `AUTH_INVALID`, `TIMEZONE_REQUIRED`, `NOT_A_MEMBER`, `NOT_OWNER`, `GROUP_FULL`, `INVITATION_INVALID`, `INVITATION_EXPIRED`, `OWNER_CANNOT_LEAVE`, `VALIDATION_ERROR`.
 - Include Russian-friendly message text or map error codes to centralized Russian frontend strings.
@@ -77,7 +74,6 @@ Owner only; rename group.
 | View group / members / calendars | No | Yes | Yes |
 | Edit own preferences | No | Yes | Yes |
 | Create invitation | No | No | Yes |
-| Rename group | No | No | Yes |
 | Transfer ownership | No | No | Yes |
 | Delete group | No | No | Yes |
 | Leave group | No | Yes, unless owner | Owner must transfer first |

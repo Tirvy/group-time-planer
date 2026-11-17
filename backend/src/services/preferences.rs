@@ -114,19 +114,23 @@ pub async fn replace(
         .execute(&mut *transaction)
         .await?;
 
-    for interval in &normalized {
-        sqlx::query(
-            "INSERT INTO weekly_preferences
-                 (group_id, user_id, weekday, start_minute, end_minute)
-             VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(group.get())
-        .bind(user.get())
-        .bind(i64::from(interval.weekday().number()))
-        .bind(i64::from(interval.start_minute()))
-        .bind(i64::from(interval.end_minute()))
-        .execute(&mut *transaction)
-        .await?;
+    if !normalized.is_empty() {
+        // Chunked so a full week of intervals never exceeds SQLite's bound
+        // parameter limit on older builds.
+        for chunk in normalized.chunks(100) {
+            let mut insert = sqlx::QueryBuilder::new(
+                "INSERT INTO weekly_preferences
+                     (group_id, user_id, weekday, start_minute, end_minute) ",
+            );
+            insert.push_values(chunk, |mut row, interval| {
+                row.push_bind(group.get())
+                    .push_bind(user.get())
+                    .push_bind(i64::from(interval.weekday().number()))
+                    .push_bind(i64::from(interval.start_minute()))
+                    .push_bind(i64::from(interval.end_minute()));
+            });
+            insert.build().execute(&mut *transaction).await?;
+        }
     }
 
     let now = super::now_millis();
@@ -160,7 +164,7 @@ async fn load_intervals<'e, E>(
 where
     E: Executor<'e, Database = Sqlite>,
 {
-    let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+    let rows: Vec<IntervalRow> = sqlx::query_as(
         "SELECT weekday, start_minute, end_minute
          FROM weekly_preferences
          WHERE group_id = ? AND user_id = ?
@@ -172,12 +176,12 @@ where
     .await?;
 
     let mut intervals = Vec::with_capacity(rows.len());
-    for (weekday, start, end) in rows {
-        let weekday = Weekday::from_db(weekday)
+    for row in rows {
+        let weekday = Weekday::from_db(row.weekday)
             .map_err(|error| PreferencesError::CorruptData(error.to_string()))?;
-        let start = u16::try_from(start)
+        let start = u16::try_from(row.start_minute)
             .map_err(|_| PreferencesError::CorruptData("start_minute out of range".to_owned()))?;
-        let end = u16::try_from(end)
+        let end = u16::try_from(row.end_minute)
             .map_err(|_| PreferencesError::CorruptData("end_minute out of range".to_owned()))?;
         intervals.push(
             PreferenceInterval::new(weekday, start, end)
@@ -186,4 +190,11 @@ where
     }
 
     normalize_intervals(intervals).map_err(|error| PreferencesError::CorruptData(error.to_string()))
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct IntervalRow {
+    weekday: i64,
+    start_minute: i64,
+    end_minute: i64,
 }

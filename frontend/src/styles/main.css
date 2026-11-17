@@ -1,6 +1,31 @@
 /* Mobile-first baseline. Telegram injects safe-area insets for full-screen mode. */
 :root {
+  /* Dark scheme defaults; `.v-theme--light` overrides these. */
+  --app-border: rgba(255, 255, 255, 0.08);
+  --app-grid-line: rgba(255, 255, 255, 0.12);
+  --app-cell-line: rgba(255, 255, 255, 0.04);
+  --app-cell-bg: rgba(255, 255, 255, 0.025);
+  --app-cell-border: rgba(255, 255, 255, 0.2);
+  --app-shadow: rgba(0, 0, 0, 0.35);
+}
+
+.v-theme--light,
+:root[data-theme='light'] {
+  --app-border: rgba(0, 0, 0, 0.1);
+  --app-grid-line: rgba(0, 0, 0, 0.16);
+  --app-cell-line: rgba(0, 0, 0, 0.06);
+  --app-cell-bg: rgba(0, 0, 0, 0.03);
+  --app-cell-border: rgba(0, 0, 0, 0.25);
+  --app-shadow: rgba(0, 0, 0, 0.12);
+}
+
+.v-theme--dark {
   color-scheme: dark;
+}
+
+.v-theme--light,
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 html,

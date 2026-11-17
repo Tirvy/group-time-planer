@@ -14,7 +14,6 @@ pub struct Group {
     pub created_at: i64,
     pub updated_at: i64,
 }
-
 /// Group data as seen by one member, including their role and setup state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupSummary {
@@ -121,7 +120,15 @@ pub async fn create_with_owner(
 ///
 /// A user may be a member of multiple groups; preferences and setup state are
 /// independent per group.
-type SummaryRow = (i64, String, String, String, Option<i64>, i64);
+#[derive(Debug, sqlx::FromRow)]
+struct SummaryRow {
+    id: i64,
+    name: String,
+    role: String,
+    color: String,
+    setup_completed_at: Option<i64>,
+    member_count: i64,
+}
 
 pub async fn list_for_user(
     pool: &SqlitePool,
@@ -179,50 +186,26 @@ pub async fn get_for_user(
     }
 }
 
-fn summary_from_row(
-    (id, name, role, color, setup_completed_at, member_count): SummaryRow,
-) -> Result<GroupSummary, GroupError> {
-    let id = GroupId::new(id).map_err(|_| GroupError::InvalidGroupId)?;
+fn summary_from_row(row: SummaryRow) -> Result<GroupSummary, GroupError> {
+    let id = GroupId::new(row.id).map_err(|_| GroupError::InvalidGroupId)?;
     let name =
-        GroupName::parse(&name).map_err(|error| GroupError::CorruptData(error.to_string()))?;
-    let role =
-        MemberRole::from_db(&role).map_err(|error| GroupError::CorruptData(error.to_string()))?;
+        GroupName::parse(&row.name).map_err(|error| GroupError::CorruptData(error.to_string()))?;
+    let role = MemberRole::from_db(&row.role)
+        .map_err(|error| GroupError::CorruptData(error.to_string()))?;
     Ok(GroupSummary {
         id,
         name,
         role,
-        color,
-        member_count,
-        setup_completed_at,
+        color: row.color,
+        member_count: row.member_count,
+        setup_completed_at: row.setup_completed_at,
     })
 }
 
-/// Renames a group. Owner only.
-pub async fn rename(
-    pool: &SqlitePool,
-    actor: UserId,
-    group: GroupId,
-    name: &GroupName,
-) -> Result<(), GroupError> {
-    let owner: Option<i64> = sqlx::query_scalar("SELECT owner_user_id FROM groups WHERE id = ?")
-        .bind(group.get())
-        .fetch_optional(pool)
-        .await?;
-    let Some(owner) = owner else {
-        return Err(GroupError::GroupNotFound(group));
-    };
-    if owner != actor.get() {
-        return Err(GroupError::NotOwner(actor));
-    }
-
-    sqlx::query("UPDATE groups SET name = ?, updated_at = ? WHERE id = ?")
-        .bind(name.as_str())
-        .bind(super::now_millis())
-        .bind(group.get())
-        .execute(pool)
-        .await?;
-
-    Ok(())
+#[derive(Debug, sqlx::FromRow)]
+struct OwnerRow {
+    name: String,
+    owner_user_id: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -247,12 +230,16 @@ pub async fn transfer_ownership(
     let mut connection = pool.acquire().await?;
     let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
 
-    let group_row: Option<(String, i64)> =
+    let group_row: Option<OwnerRow> =
         sqlx::query_as("SELECT name, owner_user_id FROM groups WHERE id = ?")
             .bind(group.get())
             .fetch_optional(&mut *transaction)
             .await?;
-    let Some((group_name, owner_raw)) = group_row else {
+    let Some(OwnerRow {
+        name: group_name,
+        owner_user_id: owner_raw,
+    }) = group_row
+    else {
         return Err(GroupError::GroupNotFound(group));
     };
     if owner_raw != actor.get() {
@@ -315,12 +302,16 @@ pub async fn delete_group(
     let mut connection = pool.acquire().await?;
     let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
 
-    let group_row: Option<(String, i64)> =
+    let group_row: Option<OwnerRow> =
         sqlx::query_as("SELECT name, owner_user_id FROM groups WHERE id = ?")
             .bind(group.get())
             .fetch_optional(&mut *transaction)
             .await?;
-    let Some((group_name, owner_raw)) = group_row else {
+    let Some(OwnerRow {
+        name: group_name,
+        owner_user_id: owner_raw,
+    }) = group_row
+    else {
         return Err(GroupError::GroupNotFound(group));
     };
     if owner_raw != actor.get() {

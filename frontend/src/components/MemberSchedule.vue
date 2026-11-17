@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { mdiArrowLeft, mdiCalendarRange, mdiClockOutline, mdiEarth } from '@mdi/js'
+
 import { ru } from '../i18n/ru'
 import { segmentsForDay } from '../planner/combined'
 import {
@@ -14,6 +16,7 @@ import {
   memberRoleLabel,
   memberSetupLabel,
 } from '../planner/names'
+import { formatOffset } from '../timezones'
 import type { MemberCalendarResponse } from '../types/api'
 
 const props = defineProps<{
@@ -28,6 +31,15 @@ const member = computed(() => props.response.member)
 const pending = computed(() => member.value.setup_state === 'pending')
 const empty = computed(
   () => !pending.value && member.value.segments.length === 0,
+)
+
+/**
+ * The member's own zone is shown because schedules are converted into the
+ * viewer's zone; without it, "21:00" is ambiguous when members live apart.
+ */
+const memberTimezone = computed(() => member.value.timezone)
+const memberOffset = computed(() =>
+  memberTimezone.value ? formatOffset(memberTimezone.value) : '',
 )
 
 const days = computed(() =>
@@ -64,19 +76,30 @@ const days = computed(() =>
         <v-btn
           size="small"
           variant="text"
-          prepend-icon="mdi-arrow-left"
+          :prepend-icon="mdiArrowLeft"
           @click="emit('back')"
         >
           {{ ru.planner.backToMembers }}
         </v-btn>
         <v-spacer />
-        <v-chip size="small" prepend-icon="mdi-calendar-range">
+        <v-chip size="small" :prepend-icon="mdiCalendarRange">
           {{ formatWeekRange(response.reference_week.start_date, response.reference_week.end_date) }}
         </v-chip>
-        <v-chip size="small" prepend-icon="mdi-clock-outline">
+        <v-chip size="small" :prepend-icon="mdiClockOutline">
           {{ response.viewer_timezone }}
         </v-chip>
       </div>
+
+      <v-chip
+        v-if="memberTimezone"
+        size="small"
+        variant="outlined"
+        class="mb-3"
+        :prepend-icon="mdiEarth"
+      >
+        {{ ru.planner.memberTimezone }}: {{ memberTimezone }}
+        <template v-if="memberOffset"> · {{ memberOffset }}</template>
+      </v-chip>
 
       <v-alert
         v-if="pending"
@@ -136,7 +159,7 @@ const days = computed(() =>
 
 <style scoped>
 .calendar-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--app-border);
 }
 
 .member-swatch {
@@ -158,7 +181,7 @@ const days = computed(() =>
   gap: 8px;
   align-items: start;
   padding: 6px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--app-border);
 }
 
 .day-label {

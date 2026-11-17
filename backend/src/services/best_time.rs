@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
-    domain::{GroupId, IanaTimezone},
+    domain::{GroupId, IanaTimezone, UserId},
     services::{
         calendar::{CalendarMember, GroupCalendar},
         timezone::{self, ReferenceWeek, TimeError},
@@ -16,8 +16,14 @@ pub struct RankedInterval {
     pub end_minute: u16,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    /// Number of configured members whose converted preference covers this range.
-    pub count: usize,
+    /// Configured members whose converted preference covers this range.
+    pub member_ids: Vec<UserId>,
+}
+
+impl RankedInterval {
+    pub fn count(&self) -> usize {
+        self.member_ids.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +73,7 @@ pub fn rank(calendar: &GroupCalendar) -> Result<BestTime, TimeError> {
             continue;
         }
 
-        let count = configured
+        let covering: Vec<UserId> = configured
             .iter()
             .filter(|member| {
                 member
@@ -75,8 +81,9 @@ pub fn rank(calendar: &GroupCalendar) -> Result<BestTime, TimeError> {
                     .iter()
                     .any(|segment| segment.start <= start && segment.end >= end)
             })
-            .count();
-        if count == 0 {
+            .map(|member| member.user_id)
+            .collect();
+        if covering.is_empty() {
             continue;
         }
 
@@ -84,10 +91,10 @@ pub fn rank(calendar: &GroupCalendar) -> Result<BestTime, TimeError> {
             timezone::viewer_position(start, end, &calendar.week)?;
 
         if let Some(previous) = merged.last_mut()
-            && previous.count == count
             && previous.day == day
             && previous.end == start
             && previous.end_minute == start_minute
+            && previous.member_ids == covering
         {
             previous.end = end;
             previous.end_minute = end_minute;
@@ -100,14 +107,14 @@ pub fn rank(calendar: &GroupCalendar) -> Result<BestTime, TimeError> {
             end_minute,
             start,
             end,
-            count,
+            member_ids: covering,
         });
     }
 
     merged.sort_by(|left, right| {
         right
-            .count
-            .cmp(&left.count)
+            .count()
+            .cmp(&left.count())
             .then_with(|| left.start.cmp(&right.start))
     });
 
@@ -173,6 +180,7 @@ mod tests {
             username: None,
             role: MemberRole::Member,
             color: "#4DD0E1".to_owned(),
+            timezone: None,
             setup_state,
             segments,
         }
@@ -229,15 +237,23 @@ mod tests {
         assert_eq!(ranked.pending_member_count, 1);
         assert_eq!(ranked.intervals.len(), 3);
 
-        assert_eq!(ranked.intervals[0].count, 2);
+        assert_eq!(ranked.intervals[0].count(), 2);
         assert_eq!(ranked.intervals[0].start_minute, 18 * 60);
         assert_eq!(ranked.intervals[0].end_minute, 19 * 60);
-        assert_eq!(ranked.intervals[1].count, 2);
+        assert_eq!(
+            ranked.intervals[0].member_ids,
+            vec![UserId::new(1).unwrap(), UserId::new(2).unwrap()]
+        );
+        assert_eq!(ranked.intervals[1].count(), 2);
         assert_eq!(ranked.intervals[1].start_minute, 19 * 60 + 30);
         assert_eq!(ranked.intervals[1].end_minute, 20 * 60);
-        assert_eq!(ranked.intervals[2].count, 1);
+        assert_eq!(ranked.intervals[2].count(), 1);
         assert_eq!(ranked.intervals[2].start_minute, 19 * 60);
         assert_eq!(ranked.intervals[2].end_minute, 19 * 60 + 30);
+        assert_eq!(
+            ranked.intervals[2].member_ids,
+            vec![UserId::new(1).unwrap()]
+        );
     }
 
     #[test]
@@ -258,7 +274,11 @@ mod tests {
         assert_eq!(ranked.intervals.len(), 1);
         assert_eq!(ranked.intervals[0].start_minute, 18 * 60);
         assert_eq!(ranked.intervals[0].end_minute, 20 * 60);
-        assert_eq!(ranked.intervals[0].count, 2);
+        assert_eq!(ranked.intervals[0].count(), 2);
+        assert_eq!(
+            ranked.intervals[0].member_ids,
+            vec![UserId::new(1).unwrap(), UserId::new(2).unwrap()]
+        );
     }
 
     #[test]

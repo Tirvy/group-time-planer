@@ -167,11 +167,11 @@ pub async fn leave(
     let mut connection = pool.acquire().await?;
     let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
 
-    let group: Option<(String,)> = sqlx::query_as("SELECT name FROM groups WHERE id = ?")
+    let group_name: Option<String> = sqlx::query_scalar("SELECT name FROM groups WHERE id = ?")
         .bind(group_id.get())
         .fetch_optional(&mut *transaction)
         .await?;
-    let Some((group_name,)) = group else {
+    let Some(group_name) = group_name else {
         return Err(LeaveError::GroupNotFound(group_id));
     };
 

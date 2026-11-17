@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { mdiCheckCircleOutline, mdiCircleEditOutline } from '@mdi/js'
+
 import { ru } from '../i18n/ru'
 import { intervalsToSlots, sameSlots, slotsToIntervals } from '../planner/model'
 import type { GroupDto, PreferenceInterval, PreferencesResponse } from '../types/api'
@@ -93,7 +95,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
           size="small"
           color="warning"
           variant="tonal"
-          prepend-icon="mdi-circle-edit-outline"
+          :prepend-icon="mdiCircleEditOutline"
         >
           {{ ru.planner.unsaved }}
         </v-chip>
@@ -102,7 +104,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
           size="small"
           color="success"
           variant="tonal"
-          prepend-icon="mdi-check-circle-outline"
+          :prepend-icon="mdiCheckCircleOutline"
         >
           {{ ru.planner.configuredBanner }}
         </v-chip>
@@ -202,7 +204,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 
 <style scoped>
 .calendar-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--app-border);
 }
 
 .calendar-card--actions {
@@ -216,9 +218,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   left: 0;
   z-index: 1000;
   padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--app-border);
   background: rgba(var(--v-theme-surface), 0.96);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 -8px 24px var(--app-shadow);
   backdrop-filter: blur(10px);
 }
 
@@ -238,7 +240,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 }
 
 .legend-swatch--blank {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--app-cell-bg);
+  border: 1px solid var(--app-cell-border);
 }
 </style>

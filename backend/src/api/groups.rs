@@ -7,18 +7,21 @@ use crate::{
     services::groups,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct GroupDto {
     /// Internal group ID serialized as a string.
     pub id: String,
     pub name: String,
+    #[ts(type = "\"owner\" | \"member\"")]
     pub role: &'static str,
     pub color: String,
     pub member_count: i64,
     pub setup_completed: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct GroupsResponse {
     pub groups: Vec<GroupDto>,
 }

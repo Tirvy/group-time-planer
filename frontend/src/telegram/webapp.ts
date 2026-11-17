@@ -5,13 +5,14 @@
  */
 export interface TelegramWebApp {
   initData: string
-  colorScheme: 'light' | 'dark'
-  themeParams: Record<string, string>
+  colorScheme?: 'light' | 'dark'
+  themeParams?: Record<string, string>
   isExpanded: boolean
   ready(): void
   expand(): void
   setHeaderColor?(color: string): void
   setBackgroundColor?(color: string): void
+  onEvent?(event: 'themeChanged', handler: () => void): void
 }
 
 declare global {
@@ -36,8 +37,6 @@ export function initTelegram(): TelegramWebApp | null {
   try {
     webApp.ready()
     webApp.expand()
-    webApp.setHeaderColor?.('#0b0f19')
-    webApp.setBackgroundColor?.('#0b0f19')
   } catch {
     // Older Telegram clients may not support every method.
   }

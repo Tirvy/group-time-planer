@@ -17,14 +17,16 @@ use crate::{
 
 const MAX_INTERVALS: usize = 336;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct IntervalDto {
     pub weekday: u8,
     pub start_minute: u16,
     pub end_minute: u16,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct PreferencesResponse {
     pub group_id: String,
     pub timezone: String,

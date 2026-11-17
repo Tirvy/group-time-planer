@@ -132,16 +132,15 @@ pub async fn preview(
     token: &InvitationToken,
     viewer: UserId,
 ) -> Result<InvitationPreview, InvitationError> {
-    type PreviewRow = (i64, String, Option<i64>, Option<i64>, i64);
     let row: Option<PreviewRow> = sqlx::query_as(
         "SELECT i.group_id,
-                g.name,
+                g.name AS group_name,
                 i.expires_at,
                 i.revoked_at,
                 EXISTS(
                     SELECT 1 FROM group_members m
                     WHERE m.group_id = i.group_id AND m.user_id = ?
-                )
+                ) AS is_member
          FROM invitations i
          JOIN groups g ON g.id = i.group_id
          WHERE i.token_hash = ?",
@@ -151,18 +150,21 @@ pub async fn preview(
     .fetch_optional(pool)
     .await?;
 
-    let Some((group_id_raw, group_name, expires_at, revoked_at, is_member)) = row else {
+    let Some(row) = row else {
         return Err(InvitationError::InvalidToken);
     };
 
-    if revoked_at.is_some() {
+    if row.revoked_at.is_some() {
         return Err(InvitationError::Revoked);
     }
-    if expires_at.is_some_and(|expiry| expiry <= super::now_millis()) {
+    if row
+        .expires_at
+        .is_some_and(|expiry| expiry <= super::now_millis())
+    {
         return Err(InvitationError::Expired);
     }
 
-    let group_id = GroupId::new(group_id_raw)
+    let group_id = GroupId::new(row.group_id)
         .map_err(|error| InvitationError::CorruptData(error.to_string()))?;
     let members = members::list_unchecked(pool, group_id)
         .await
@@ -171,11 +173,11 @@ pub async fn preview(
 
     Ok(InvitationPreview {
         group_id,
-        group_name,
+        group_name: row.group_name,
         members,
         member_count,
         is_full: member_count >= MAX_GROUP_MEMBERS as i64,
-        is_member: is_member != 0,
+        is_member: row.is_member != 0,
     })
 }
 
@@ -189,8 +191,11 @@ pub async fn join(
     let mut connection = pool.acquire().await?;
     let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
 
-    let row: Option<(i64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT i.group_id, g.name, i.expires_at, i.revoked_at
+    let row: Option<JoinRow> = sqlx::query_as(
+        "SELECT i.group_id,
+                g.name AS group_name,
+                i.expires_at,
+                i.revoked_at
          FROM invitations i
          JOIN groups g ON g.id = i.group_id
          WHERE i.token_hash = ?",
@@ -199,18 +204,22 @@ pub async fn join(
     .fetch_optional(&mut *transaction)
     .await?;
 
-    let Some((group_id_raw, group_name, expires_at, revoked_at)) = row else {
+    let Some(row) = row else {
         return Err(InvitationError::InvalidToken);
     };
-    if revoked_at.is_some() {
+    if row.revoked_at.is_some() {
         return Err(InvitationError::Revoked);
     }
-    if expires_at.is_some_and(|expiry| expiry <= super::now_millis()) {
+    if row
+        .expires_at
+        .is_some_and(|expiry| expiry <= super::now_millis())
+    {
         return Err(InvitationError::Expired);
     }
 
-    let group_id = GroupId::new(group_id_raw)
+    let group_id = GroupId::new(row.group_id)
         .map_err(|error| InvitationError::CorruptData(error.to_string()))?;
+    let group_name = row.group_name;
 
     match membership::add_locked(&mut transaction, group_id, user).await {
         Ok(_) => {
@@ -238,8 +247,8 @@ pub async fn revoke(
     let mut connection = pool.acquire().await?;
     let mut transaction = connection.begin_with(db::BEGIN_IMMEDIATE).await?;
 
-    let row: Option<(String, i64, Option<i64>)> = sqlx::query_as(
-        "SELECT g.name, g.owner_user_id, i.revoked_at
+    let row: Option<RevokeRow> = sqlx::query_as(
+        "SELECT g.name AS group_name, g.owner_user_id, i.revoked_at
          FROM invitations i
          JOIN groups g ON g.id = i.group_id
          WHERE i.id = ?",
@@ -248,15 +257,17 @@ pub async fn revoke(
     .fetch_optional(&mut *transaction)
     .await?;
 
-    let Some((group_name, owner_raw, revoked_at)) = row else {
+    let Some(row) = row else {
         return Err(InvitationError::InvitationNotFound);
     };
-    if owner_raw != actor.get() {
+    if row.owner_user_id != actor.get() {
         return Err(InvitationError::NotOwner(actor));
     }
 
-    if revoked_at.is_some() {
-        return Ok(RevokeOutcome::AlreadyRevoked { group_name });
+    if row.revoked_at.is_some() {
+        return Ok(RevokeOutcome::AlreadyRevoked {
+            group_name: row.group_name,
+        });
     }
 
     sqlx::query("UPDATE invitations SET revoked_at = ? WHERE id = ?")
@@ -267,7 +278,33 @@ pub async fn revoke(
 
     transaction.commit().await?;
 
-    Ok(RevokeOutcome::Revoked { group_name })
+    Ok(RevokeOutcome::Revoked {
+        group_name: row.group_name,
+    })
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct PreviewRow {
+    group_id: i64,
+    group_name: String,
+    expires_at: Option<i64>,
+    revoked_at: Option<i64>,
+    is_member: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct JoinRow {
+    group_id: i64,
+    group_name: String,
+    expires_at: Option<i64>,
+    revoked_at: Option<i64>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RevokeRow {
+    group_name: String,
+    owner_user_id: i64,
+    revoked_at: Option<i64>,
 }
 
 fn map_members_error(error: members::MembersError) -> InvitationError {

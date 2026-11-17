@@ -73,6 +73,72 @@ async fn auth_endpoint_creates_user_and_reports_timezone_state() {
 }
 
 #[tokio::test]
+async fn read_routes_do_not_write_the_user_profile() {
+    let (app, db) = test_api().await;
+    let init_data = sign_init_data(TEST_BOT_TOKEN, 700_011, now_secs(), "Читатель");
+
+    // A header-only first request still creates the row.
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        "/api/me",
+        Some(auth_header(&init_data)),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    sqlx::query(
+        "UPDATE users SET updated_at = 1, first_name = 'Старое' WHERE telegram_id = 700011",
+    )
+    .execute(&db.pool)
+    .await
+    .unwrap();
+
+    let (status, body) = call(
+        &app,
+        Method::GET,
+        "/api/me",
+        Some(auth_header(&init_data)),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["user"]["first_name"], "Старое",
+        "reads must not refresh the profile"
+    );
+
+    let (updated_at, first_name): (i64, Option<String>) =
+        sqlx::query_as("SELECT updated_at, first_name FROM users WHERE telegram_id = 700011")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert_eq!(updated_at, 1, "reads must not touch updated_at");
+    assert_eq!(first_name.as_deref(), Some("Старое"));
+
+    // The explicit login endpoint refreshes profile metadata.
+    let fresh = sign_init_data(TEST_BOT_TOKEN, 700_011, now_secs(), "Новое");
+    let (status, body) = call(
+        &app,
+        Method::POST,
+        "/api/auth/telegram",
+        None,
+        Some(json!({ "initData": fresh })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["user"]["first_name"], "Новое");
+
+    let updated_at: i64 =
+        sqlx::query_scalar("SELECT updated_at FROM users WHERE telegram_id = 700011")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert!(updated_at > 1, "login refreshes the profile");
+}
+
+#[tokio::test]
 async fn auth_rejects_tampered_and_expired_init_data() {
     let (app, db) = test_api().await;
 

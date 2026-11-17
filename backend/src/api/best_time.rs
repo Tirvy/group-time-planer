@@ -1,11 +1,12 @@
 use axum::{
     Json,
-    body::Body,
+    body::{Body, Bytes},
     extract::{Path, State},
     http::{HeaderValue, StatusCode, header},
     response::Response,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::{
     api::{
@@ -16,12 +17,14 @@ use crate::{
     domain::{GroupId, IanaTimezone},
     services::{
         best_time::{self, RankedInterval},
-        calendar as calendar_service, timetable,
+        calendar::{self as calendar_service, GroupCalendar},
+        timetable,
         timezone::TimeError,
     },
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct RankedIntervalDto {
     pub day: u8,
     pub start_minute: u16,
@@ -29,9 +32,22 @@ pub struct RankedIntervalDto {
     pub start: String,
     pub end: String,
     pub count: usize,
+    /// Members available for the whole range, in viewer order.
+    pub members: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
+pub struct BestTimeMemberDto {
+    pub user_id: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub username: Option<String>,
+    pub color: String,
+}
+
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct BestTimeResponse {
     pub group: GroupInfoDto,
     pub viewer_timezone: String,
@@ -39,6 +55,8 @@ pub struct BestTimeResponse {
     pub total_member_count: usize,
     pub configured_member_count: usize,
     pub pending_member_count: usize,
+    /// Members referenced by `RankedIntervalDto::members`.
+    pub members: Vec<BestTimeMemberDto>,
     pub intervals: Vec<RankedIntervalDto>,
 }
 
@@ -55,28 +73,42 @@ pub async fn get_best_time(
             .await
             .map_err(map_calendar_error)?;
 
+    let members: Vec<BestTimeMemberDto> = calendar
+        .members
+        .iter()
+        .map(|member| BestTimeMemberDto {
+            user_id: member.user_id.get().to_string(),
+            first_name: member.first_name.clone(),
+            last_name: member.last_name.clone(),
+            username: member.username.clone(),
+            color: member.color.clone(),
+        })
+        .collect();
+
     let ranked = best_time::rank(&calendar).map_err(map_time_error)?;
+    let viewer_timezone = ranked.viewer_timezone;
 
     Ok(Json(BestTimeResponse {
         group: GroupInfoDto {
             id: ranked.group_id.get().to_string(),
             name: ranked.group_name,
         },
-        viewer_timezone: ranked.viewer_timezone.name().to_owned(),
+        viewer_timezone: viewer_timezone.name().to_owned(),
         reference_week: reference_week_dto(
             ranked.week.start_date,
             ranked.week.end_date,
             ranked.week.start,
             ranked.week.end,
-            ranked.viewer_timezone,
+            viewer_timezone,
         ),
         total_member_count: ranked.total_member_count,
         configured_member_count: ranked.configured_member_count,
         pending_member_count: ranked.pending_member_count,
+        members,
         intervals: ranked
             .intervals
             .into_iter()
-            .map(|interval| ranked_interval_dto(interval, ranked.viewer_timezone))
+            .map(|interval| ranked_interval_dto(interval, viewer_timezone))
             .collect(),
     }))
 }
@@ -94,6 +126,19 @@ pub async fn get_timetable_png(
             .await
             .map_err(map_calendar_error)?;
 
+    let key = calendar_cache_key(&calendar);
+    if let Some(cached) = state.png.get(&key) {
+        return Ok(png_response(cached));
+    }
+
+    // Limit concurrent renders: each one allocates a multi-megabyte pixmap.
+    let _permit = state.png.acquire().await?;
+
+    // Another request may have filled the cache while this one waited.
+    if let Some(cached) = state.png.get(&key) {
+        return Ok(png_response(cached));
+    }
+
     let now = state.clock.now();
     let png = tokio::task::spawn_blocking(move || timetable::render_png(&calendar, now))
         .await
@@ -103,7 +148,13 @@ pub async fn get_timetable_png(
             ApiError::internal()
         })?;
 
-    let mut response = Response::new(Body::from(png));
+    let bytes = Bytes::from(png);
+    state.png.put(key, bytes.clone());
+    Ok(png_response(bytes))
+}
+
+fn png_response(bytes: Bytes) -> Response {
+    let mut response = Response::new(Body::from(bytes));
     *response.status_mut() = StatusCode::OK;
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
@@ -112,7 +163,36 @@ pub async fn get_timetable_png(
         HeaderValue::from_static("inline; filename=\"timetable.png\""),
     );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    Ok(response)
+    response
+}
+
+/// Content-derived cache key: identical calendar input reuses the same PNG.
+fn calendar_cache_key(calendar: &GroupCalendar) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(calendar.group_id.get().to_le_bytes());
+    hasher.update(calendar.group_name.as_bytes());
+    hasher.update(calendar.viewer_timezone.name().as_bytes());
+    hasher.update(calendar.week.start.timestamp().to_le_bytes());
+    hasher.update(calendar.week.end.timestamp().to_le_bytes());
+
+    for member in &calendar.members {
+        hasher.update(member.user_id.get().to_le_bytes());
+        hasher.update(member.first_name.as_deref().unwrap_or_default().as_bytes());
+        hasher.update(member.last_name.as_deref().unwrap_or_default().as_bytes());
+        hasher.update(member.username.as_deref().unwrap_or_default().as_bytes());
+        hasher.update(member.role.as_db().as_bytes());
+        hasher.update(member.color.as_bytes());
+        hasher.update([u8::from(!member.setup_state.is_pending())]);
+        for segment in &member.segments {
+            hasher.update([segment.day]);
+            hasher.update(segment.start_minute.to_le_bytes());
+            hasher.update(segment.end_minute.to_le_bytes());
+            hasher.update(segment.start.timestamp().to_le_bytes());
+            hasher.update(segment.end.timestamp().to_le_bytes());
+        }
+    }
+
+    hasher.finalize().into()
 }
 
 fn ranked_interval_dto(interval: RankedInterval, timezone: IanaTimezone) -> RankedIntervalDto {
@@ -122,7 +202,12 @@ fn ranked_interval_dto(interval: RankedInterval, timezone: IanaTimezone) -> Rank
         end_minute: interval.end_minute,
         start: format_local(interval.start, timezone),
         end: format_local(interval.end, timezone),
-        count: interval.count,
+        count: interval.count(),
+        members: interval
+            .member_ids
+            .into_iter()
+            .map(|user_id| user_id.get().to_string())
+            .collect(),
     }
 }
 

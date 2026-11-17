@@ -23,7 +23,7 @@ pub async fn telegram(
         return Err(ApiError::validation("initData is too large"));
     }
 
-    let user = auth::authenticate(&state.db, &state.auth, &body.init_data)
+    let user = auth::login(&state.db, &state.auth, &body.init_data)
         .await
         .map_err(ApiError::from_auth)?;
 

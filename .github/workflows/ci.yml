@@ -20,6 +20,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - name: Fail when generated API types are stale
+        run: git diff --exit-code -- frontend/src/types/generated
 
   frontend:
     runs-on: ubuntu-latest

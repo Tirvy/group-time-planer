@@ -53,8 +53,8 @@ pub fn start(name: &str) -> String {
     format!(
         "Здравствуйте, {name}!\n\n\
          Raid Scheduler помогает небольшой группе договориться о постоянном времени встреч.\n\n\
-         В недельном календаре каждый отмечает удобные полчаса. Отмеченное значит \
-         «предпочитаю», а пустая клетка — «время не указано», а не «недоступно».\n\n\
+         В недельном календаре каждый отмечает полчаса, когда он доступен. \
+         Отмеченное значит «доступен», а пустая клетка — «недоступен».\n\n\
          Выберите действие:"
     )
 }
@@ -67,13 +67,13 @@ pub fn help() -> String {
      /calendar — открыть календарь в Mini App\n\
      /invite — пригласить участников (владелец)\n\
      /members — участники и статус календарей\n\
-     /besttime — лучшее время по предпочтениям\n\
+     /besttime — лучшее время по доступности\n\
      /timetable — PNG-расписание группы\n\
      /leave — покинуть группу\n\
      /transfer — передать владение (владелец)\n\
      /delete — удалить группу (владелец)\n\
      /help — эта справка\n\n\
-     Отмеченное время означает предпочтение, а не подтверждённую доступность."
+     Отмеченное время означает доступность участника, пустая клетка — недоступность."
         .to_owned()
 }
 
@@ -308,7 +308,7 @@ pub fn already_member(group_name: &str) -> String {
 pub fn leave_confirm(group_name: &str) -> String {
     format!(
         "Покинуть группу «{group_name}»?\n\n\
-         Ваши предпочтения в этой группе будут удалены. Данные в других группах не изменятся."
+         Ваши отметки доступности в этой группе будут удалены. Данные в других группах не изменятся."
     )
 }
 
@@ -334,7 +334,7 @@ pub fn transferred(group_name: &str, target_name: &str) -> String {
 pub fn delete_confirm(group_name: &str) -> String {
     format!(
         "Удалить группу «{group_name}»?\n\n\
-         Все приглашения, предпочтения и данные группы будут удалены без возможности восстановления."
+         Все приглашения, отметки доступности и данные группы будут удалены без возможности восстановления."
     )
 }
 
@@ -351,7 +351,7 @@ pub fn notify_left(member_name: &str, group_name: &str) -> String {
 }
 
 pub fn notify_preferences_changed(member_name: &str, group_name: &str) -> String {
-    format!("Участник {member_name} обновил предпочтения в группе «{group_name}».")
+    format!("Участник {member_name} обновил доступность в группе «{group_name}».")
 }
 
 pub fn notify_new_owner(group_name: &str) -> String {
@@ -388,7 +388,7 @@ pub fn best_time(best: &BestTime) -> String {
         return text;
     }
     if best.intervals.is_empty() {
-        text.push_str("\n\nНет отмеченных предпочтений.");
+        text.push_str("\n\nНет отмеченного времени.");
         return text;
     }
 
@@ -400,7 +400,7 @@ pub fn best_time(best: &BestTime) -> String {
             day_name(interval.day),
             format_time(interval.start_minute),
             format_time(interval.end_minute),
-            preferred_by(interval.count)
+            available_by(interval.count())
         ));
     }
     if best.intervals.len() > 10 {
@@ -408,8 +408,8 @@ pub fn best_time(best: &BestTime) -> String {
     }
 
     text.push_str(
-        "\n\nЭто предпочтения, а не подтверждённая доступность. \
-         Пустое время не означает недоступность.",
+        "\n\nЭто отмеченная участниками доступность. \
+         Пустая клетка означает недоступность.",
     );
     text
 }
@@ -449,11 +449,11 @@ pub fn format_time(minutes: u16) -> String {
     format!("{:02}:{:02}", minutes / 60, minutes % 60)
 }
 
-pub fn preferred_by(count: usize) -> String {
+pub fn available_by(count: usize) -> String {
     if count == 1 {
-        "предпочитает 1 участник".to_owned()
+        "доступен 1 участник".to_owned()
     } else {
-        format!("предпочитают: {}", participants(count as i64))
+        format!("доступны: {}", participants(count as i64))
     }
 }
 
@@ -580,9 +580,9 @@ mod tests {
         assert_eq!(format_time(1440), "24:00");
         assert_eq!(day_name(0), "Понедельник");
         assert_eq!(day_name(6), "Воскресенье");
-        assert_eq!(preferred_by(1), "предпочитает 1 участник");
-        assert_eq!(preferred_by(2), "предпочитают: 2 участника");
-        assert_eq!(preferred_by(5), "предпочитают: 5 участников");
+        assert_eq!(available_by(1), "доступен 1 участник");
+        assert_eq!(available_by(2), "доступны: 2 участника");
+        assert_eq!(available_by(5), "доступны: 5 участников");
     }
 
     #[test]

@@ -29,6 +29,7 @@ function member(
     username: null,
     role: 'member',
     color,
+    timezone: 'Europe/Berlin',
     setup_state: 'completed',
     segments,
   }

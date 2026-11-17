@@ -1,103 +1,25 @@
-/** Authenticated Mini App user. Telegram IDs are strings. */
-export interface UserDto {
-  telegram_id: string
-  username: string | null
-  first_name: string | null
-  last_name: string | null
-  timezone: string | null
-  timezone_set: boolean
-}
-
-export interface MeResponse {
-  user: UserDto
-}
-
-export interface GroupDto {
-  id: string
-  name: string
-  role: 'owner' | 'member'
-  color: string
-  member_count: number
-  setup_completed: boolean
-}
-
-export interface GroupsResponse {
-  groups: GroupDto[]
-}
-
-export interface PreferenceInterval {
-  weekday: number
-  start_minute: number
-  end_minute: number
-}
-
-export interface PreferencesResponse {
-  group_id: string
-  timezone: string
-  setup_completed: boolean
-  intervals: PreferenceInterval[]
-}
-
-export interface CalendarSegment {
-  day: number
-  start_minute: number
-  end_minute: number
-  start: string
-  end: string
-}
-
-export interface CalendarMember {
-  user_id: string
-  first_name: string | null
-  last_name: string | null
-  username: string | null
-  role: 'owner' | 'member'
-  color: string
-  setup_state: 'pending' | 'completed'
-  segments: CalendarSegment[]
-}
-
-export interface CalendarGroup {
-  id: string
-  name: string
-}
-
-export interface ReferenceWeek {
-  start_date: string
-  end_date: string
-  start: string
-  end: string
-}
-
-export interface GroupCalendarResponse {
-  group: CalendarGroup
-  viewer_timezone: string
-  reference_week: ReferenceWeek
-  members: CalendarMember[]
-}
-
-export interface MemberCalendarResponse {
-  group: CalendarGroup
-  viewer_timezone: string
-  reference_week: ReferenceWeek
-  member: CalendarMember
-}
-
-export interface RankedInterval {
-  day: number
-  start_minute: number
-  end_minute: number
-  start: string
-  end: string
-  count: number
-}
-
-export interface BestTimeResponse {
-  group: CalendarGroup
-  viewer_timezone: string
-  reference_week: ReferenceWeek
-  total_member_count: number
-  configured_member_count: number
-  pending_member_count: number
-  intervals: RankedInterval[]
-}
+/**
+ * API response types generated from the Rust DTOs by `ts-rs`.
+ *
+ * The backend is the single source of truth: run
+ * `cargo test -p raid-scheduler-backend` after changing a DTO, and CI fails if
+ * the checked-in files under `generated/` are stale. Do not edit the generated
+ * files by hand.
+ *
+ * Names are re-exported with the shorter names the app already uses.
+ */
+export type { BestTimeMemberDto as BestTimeMember } from './generated/BestTimeMemberDto'
+export type { BestTimeResponse } from './generated/BestTimeResponse'
+export type { CalendarMemberDto as CalendarMember } from './generated/CalendarMemberDto'
+export type { CalendarSegmentDto as CalendarSegment } from './generated/CalendarSegmentDto'
+export type { GroupCalendarResponse } from './generated/GroupCalendarResponse'
+export type { GroupDto } from './generated/GroupDto'
+export type { GroupInfoDto as CalendarGroup } from './generated/GroupInfoDto'
+export type { GroupsResponse } from './generated/GroupsResponse'
+export type { IntervalDto as PreferenceInterval } from './generated/IntervalDto'
+export type { MeResponse } from './generated/MeResponse'
+export type { MemberCalendarResponse } from './generated/MemberCalendarResponse'
+export type { PreferencesResponse } from './generated/PreferencesResponse'
+export type { RankedIntervalDto as RankedInterval } from './generated/RankedIntervalDto'
+export type { ReferenceWeekDto as ReferenceWeek } from './generated/ReferenceWeekDto'
+export type { UserDto } from './generated/UserDto'

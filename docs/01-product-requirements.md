@@ -7,8 +7,8 @@ Help a small group coordinate recurring weekly activities by collecting each mem
 - **Group:** a shared coordination space.
 - **Owner:** the member who created the group or received ownership transfer.
 - **Member:** a Telegram user who joined a group.
-- **Preference:** a recurring local weekly interval a member would like to play / meet.
-- **Unselected time:** no preference has been expressed. It is not an unavailable time.
+- **Availability:** a recurring local weekly interval a member is available for.
+- **Unselected time:** the member is unavailable. A blank slot is an explicit negative statement, not silence.
 - **Setup pending:** member has not saved their calendar yet.
 - **Setup completed:** member has saved at least once, even if they selected zero slots.
 - **Reference week:** the upcoming Monday through Sunday used to render the current timetable.
@@ -33,7 +33,7 @@ Help a small group coordinate recurring weekly activities by collecting each mem
 - Valid boundaries are multiples of 30 minutes.
 - `start_minute` is in `0..1439`; `end_minute` is in `1..1440`; `start_minute < end_minute`.
 - Intervals may not overlap for the same member, group and weekday. Adjacent intervals are allowed; the UI may merge them.
-- A selected slot means preferred. Do not introduce unavailable/busy semantics in the MVP.
+- A selected slot means the member is available. An unselected slot means the member is unavailable.
 
 ## 5. Timezone requirements
 - Every user has one selected IANA timezone.
@@ -55,7 +55,7 @@ Help a small group coordinate recurring weekly activities by collecting each mem
 - Preferences are independent per group.
 - Each member has a stable color within each group, stored on membership.
 - Only owner and member roles are needed in MVP.
-- Owner may rename group, manage invitations, view schedules, transfer ownership and delete group.
+- Owner may manage invitations, view schedules, transfer ownership and delete group.
 - Members may edit their own preferences, view all group calendars and leave.
 - Owner cannot leave while still owner. They must transfer ownership to an existing member first, or delete the group.
 - Ownership transfer does not remove the previous owner from membership.
@@ -63,7 +63,7 @@ Help a small group coordinate recurring weekly activities by collecting each mem
 ## 7. Preference setup states
 - `setup_pending`: no successful save has occurred (`setup_completed_at IS NULL`).
 - `setup_completed`: user has saved at least once, even with an empty interval list.
-- Empty save is valid and means the user intentionally has no preferred times.
+- Empty save is valid and means the member is intentionally unavailable for the whole week.
 - Pending members must not be counted as having no preferences.
 - Completed members with zero selected slots are included in the denominator for any percentage metric, if percentages are displayed.
 
@@ -73,10 +73,10 @@ Help a small group coordinate recurring weekly activities by collecting each mem
 - Combined timetable shows stable member colors and a legend.
 - `/timetable` produces a PNG from SVG using the same reference week and timezone conversion as the interactive view.
 - PNG includes group name, reference-week date range, generation date/time, member legend and setup status for pending members.
-- `/besttime` ranks half-hour intervals by number of configured members who prefer the corresponding actual time interval in the reference week.
-- Adjacent slots with identical ranking counts may be merged for presentation.
-- Ranking is a preference signal, not confirmed availability or an automatic booking recommendation.
-- Pending members are excluded from ranking counts and denominators. Completed members with no selected slots are configured but contribute zero preferences.
+- `/besttime` ranks half-hour intervals by number of configured members who are available for the corresponding actual time interval in the reference week.
+- Adjacent slots with identical ranking counts and the same available members may be merged for presentation.
+- Ranking reflects declared weekly availability, not a live presence check or an automatic booking recommendation.
+- Pending members are excluded from ranking counts and denominators. Completed members with no selected slots are configured but unavailable all week.
 
 ## 9. Group invitations
 - Invitation links use Telegram deep linking: `https://t.me/<BOT_USERNAME>?start=join_<TOKEN>`.
@@ -103,4 +103,4 @@ Notification failure must not roll back the domain action. Telegram bots cannot 
 - Keep user-facing strings centralized for future localization.
 
 ## 12. Out of scope
-No WoW API integration, character/role management, dungeon readiness checks, automatic event booking, attendance, reminders, recurring event creation, hard-unavailable slots, moderator roles, calendar integrations, historical analytics, or automated database backups in MVP.
+No WoW API integration, character/role management, dungeon readiness checks, automatic event booking, attendance, reminders, recurring event creation, moderator roles, calendar integrations, historical analytics, or automated database backups in MVP.

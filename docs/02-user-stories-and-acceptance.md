@@ -46,14 +46,14 @@ Acceptance:
 - Mobile scrolling remains usable; drag interaction must not make the calendar impossible to scroll.
 - User can clear a range.
 - Save replaces that user's intervals for the active group atomically.
-- Empty save is valid and marks setup complete.
+- Empty save is valid, marks setup complete and means the member is unavailable all week.
 - Unsaved changes are indicated; navigating away prompts to discard or stay.
 - Only the authenticated user can edit their own preferences.
 
 ## Calendar visibility
 Acceptance:
 - Every group member can view every member's individual calendar.
-- Individual calendar view includes member name and setup status.
+- Individual calendar view includes member name, setup status, and the member's own timezone with its current offset.
 - Pending member is labelled as not configured, not as having zero preferences.
 - All calendars are displayed in the viewer's timezone.
 - A member's own calendar is visually distinguished.
@@ -68,11 +68,11 @@ Acceptance:
 
 ## Best time
 Acceptance:
-- Rank slots by count of completed members who prefer the corresponding actual interval in the reference week.
+- Rank slots by count of completed members who are available for the corresponding actual interval in the reference week.
 - Pending members are excluded.
-- Completed members with zero preferences count as configured but add no votes.
-- Merge adjacent equal-score intervals for readability.
-- Label output as preferences, not confirmed availability.
+- Completed members with zero availability count as configured but add no votes.
+- Merge adjacent equal-score intervals with the same available members for readability.
+- Label output as declared availability; list which members are available in each range.
 
 ## Membership and ownership
 Acceptance:

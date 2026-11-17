@@ -62,12 +62,12 @@ Timezone selector should support search by city/region and show the actual IANA 
 From the member list or timetable, select a member to open their individual calendar. All members can view all individual calendars. Display member name, stable color, setup status, and reference week. Read-only for other members.
 
 ## 7. Combined timetable
-Show all members' preferences using their stable colors. Include a legend, pending setup state and reference-week date range. Display times in the viewer's selected timezone. The view must make it clear that blank space is not proof of unavailability.
+Show all members' availability using their stable colors. Include a legend, pending setup state and reference-week date range. Display times in the viewer's selected timezone. The view must make it clear that a blank cell means "unavailable", not "unknown".
 
 ## 8. Best-time output
 Display ranked intervals with count, for example:
-- «Понедельник, 19:00–20:30 · предпочитают 5 участников».
-Use wording equivalent to “preferred by”, never “available”. Explain that unconfigured members are excluded.
+- «Понедельник, 19:00–20:30 · доступны 5 участников».
+Use wording equivalent to “available”, never imply a live presence check. Explain that unconfigured members are excluded.
 
 ## 9. Ownership transfer
 1. Owner invokes `/transfer`.

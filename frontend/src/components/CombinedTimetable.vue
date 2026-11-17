@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import { mdiCalendarRange, mdiClockOutline } from '@mdi/js'
+
 import { ru } from '../i18n/ru'
 import { buildCombinedGrid } from '../planner/combined'
 import {
@@ -77,10 +79,10 @@ function cellLabel(dayIndex: number, slot: number): string {
 
     <v-card-text class="pt-0">
       <div class="d-flex flex-wrap align-center ga-2 mb-3">
-        <v-chip size="small" prepend-icon="mdi-calendar-range">
+        <v-chip size="small" :prepend-icon="mdiCalendarRange">
           {{ formatWeekRange(props.calendar.reference_week.start_date, props.calendar.reference_week.end_date) }}
         </v-chip>
-        <v-chip size="small" prepend-icon="mdi-clock-outline">
+        <v-chip size="small" :prepend-icon="mdiClockOutline">
           {{ props.calendar.viewer_timezone }}
         </v-chip>
       </div>
@@ -230,7 +232,7 @@ function cellLabel(dayIndex: number, slot: number): string {
 
 <style scoped>
 .calendar-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--app-border);
 }
 
 .read-grid-wrap {
@@ -254,16 +256,16 @@ function cellLabel(dayIndex: number, slot: number): string {
   align-items: center;
   justify-content: center;
   height: 34px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--app-grid-line);
 }
 
 .day-head--bottom {
   border-bottom: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--app-grid-line);
 }
 
 .corner--bottom {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--app-grid-line);
 }
 
 .day-short {
@@ -287,7 +289,7 @@ function cellLabel(dayIndex: number, slot: number): string {
 }
 
 .time-label--hour {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--app-grid-line);
 }
 
 .time-label--half {
@@ -305,14 +307,14 @@ function cellLabel(dayIndex: number, slot: number): string {
   padding: 1px;
   overflow: hidden;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.025);
-  border-left: 1px solid rgba(255, 255, 255, 0.035);
-  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid var(--app-cell-line);
+  border-left: 1px solid var(--app-cell-line);
+  background: var(--app-cell-bg);
   cursor: pointer;
 }
 
 .read-cell--hour {
-  border-top-color: rgba(255, 255, 255, 0.1);
+  border-top-color: var(--app-grid-line);
 }
 
 .member-dot,

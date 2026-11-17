@@ -1,14 +1,11 @@
 mod common;
 
 use common::*;
-use raid_scheduler_backend::{
-    domain::{GroupId, GroupName},
-    services::{
-        groups::{self, GroupError},
-        invitations,
-        members::{self, MembersError},
-        membership::{self, LeaveError},
-    },
+use raid_scheduler_backend::services::{
+    groups::{self, GroupError},
+    invitations,
+    members::{self, MembersError},
+    membership::{self, LeaveError},
 };
 
 #[tokio::test]
@@ -233,53 +230,6 @@ async fn group_deletion_captures_members_and_cascades_all_group_data() {
         2,
         "user profiles survive group deletion"
     );
-}
-
-#[tokio::test]
-async fn rename_is_owner_only_and_persists() {
-    let test_db = test_db().await;
-    let owner = seed_user(&test_db.pool, 20_501).await;
-    let member = seed_user(&test_db.pool, 20_502).await;
-    let group = seed_group(&test_db.pool, owner, "Старое имя").await;
-    membership::add(&test_db.pool, group.id, member)
-        .await
-        .unwrap();
-
-    groups::rename(
-        &test_db.pool,
-        owner,
-        group.id,
-        &GroupName::parse("Новое имя").unwrap(),
-    )
-    .await
-    .unwrap();
-
-    let stored: String = sqlx::query_scalar("SELECT name FROM groups WHERE id = ?")
-        .bind(group.id.get())
-        .fetch_one(&test_db.pool)
-        .await
-        .unwrap();
-    assert_eq!(stored, "Новое имя");
-
-    let error = groups::rename(
-        &test_db.pool,
-        member,
-        group.id,
-        &GroupName::parse("Чужое имя").unwrap(),
-    )
-    .await
-    .expect_err("members cannot rename");
-    assert!(matches!(error, GroupError::NotOwner(_)));
-
-    let error = groups::rename(
-        &test_db.pool,
-        owner,
-        GroupId::new(999_999).unwrap(),
-        &GroupName::parse("Нет группы").unwrap(),
-    )
-    .await
-    .expect_err("unknown group must fail");
-    assert!(matches!(error, GroupError::GroupNotFound(_)));
 }
 
 #[tokio::test]

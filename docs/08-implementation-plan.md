@@ -32,7 +32,7 @@ Acceptance: user can start bot, create group, and list/select their groups.
 ## Phase 3: Invitations and lifecycle
 - Implement secure invitation creation, preview and explicit join confirmation.
 - Implement revoke/expiration.
-- Implement `/members`, `/leave`, `/transfer`, `/delete` and rename.
+- Implement `/members`, `/leave`, `/transfer` and `/delete`.
 - Implement best-effort owner notifications.
 
 Acceptance: lifecycle acceptance criteria pass, including race-safe capacity, transfer, leave restrictions and deletion cascades.

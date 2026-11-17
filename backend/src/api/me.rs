@@ -8,7 +8,8 @@ use crate::{
     services::users::{self, User},
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct UserDto {
     /// Telegram IDs are strings to avoid JavaScript precision loss.
     pub telegram_id: String,
@@ -33,7 +34,8 @@ impl From<User> for UserDto {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../frontend/src/types/generated/")]
 pub struct MeResponse {
     pub user: UserDto,
 }

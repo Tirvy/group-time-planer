@@ -3,3 +3,7 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 docker-entrypoint.sh text eol=lf
+
+# Generated TypeScript bindings must be byte-identical on every platform so CI
+# can fail on a stale contract.
+frontend/src/types/generated/** text eol=lf

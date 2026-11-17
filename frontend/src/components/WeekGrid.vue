@@ -250,16 +250,16 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
   font-weight: 600;
   color: rgba(var(--v-theme-on-surface), 0.85);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--app-grid-line);
 }
 
 .day-head--bottom {
   border-bottom: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--app-grid-line);
 }
 
 .corner--bottom {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--app-grid-line);
 }
 
 .time-label {
@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
 }
 
 .time-label--hour {
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--app-grid-line);
 }
 
 .time-label--half {
@@ -284,16 +284,16 @@ onBeforeUnmount(() => {
   height: 28px;
   padding: 0;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  border-left: 1px solid rgba(255, 255, 255, 0.04);
-  background: rgba(255, 255, 255, 0.025);
+  border-top: 1px solid var(--app-cell-line);
+  border-left: 1px solid var(--app-cell-line);
+  background: var(--app-cell-bg);
   cursor: pointer;
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
 }
 
 .slot--hour {
-  border-top-color: rgba(255, 255, 255, 0.12);
+  border-top-color: var(--app-grid-line);
 }
 
 .slot--selected {

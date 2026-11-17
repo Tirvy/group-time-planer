@@ -78,6 +78,7 @@ mod tests {
                 },
                 bot: None,
                 clock: std::sync::Arc::new(crate::services::clock::SystemClock),
+                png: std::sync::Arc::new(crate::api::PngCache::new()),
             }),
             pool,
             dir,

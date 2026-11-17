@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+
+import { mdiClockEditOutline, mdiRefresh, mdiShieldAlertOutline } from '@mdi/js'
 
 import TimezoneSetup from './components/TimezoneSetup.vue'
 import GroupsView from './components/GroupsView.vue'
 import { useSession } from './composables/useSession'
+import { watchTelegramTheme } from './telegram/theme'
+import { telegramIcon } from './telegram/icon'
 import { ru } from './i18n/ru'
 
 const {
   state,
   user,
   initData,
-  errorCode,
   errorMessage,
+  sessionExpired,
   timezoneRequired,
   saving,
   saveError,
@@ -33,11 +37,10 @@ function closeTimezoneEditor(): void {
   editOpen.value = false
 }
 
-const showReopenHint = computed(
-  () => errorCode.value === 'AUTH_EXPIRED' || errorCode.value === 'AUTH_INVALID',
-)
-
-onMounted(start)
+onMounted(() => {
+  watchTelegramTheme()
+  void start()
+})
 
 async function saveInitialTimezone(timezone: string): Promise<void> {
   if (await saveTimezone(timezone)) {
@@ -71,7 +74,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
         <v-card v-else-if="state === 'no-telegram'" variant="tonal" class="state-card">
           <v-card-item>
             <template #prepend>
-              <v-icon color="primary" size="32">mdi-telegram</v-icon>
+              <v-icon color="primary" size="32" :icon="telegramIcon" />
             </template>
             <v-card-title>{{ ru.auth.noTelegramTitle }}</v-card-title>
             <v-card-subtitle class="text-wrap">
@@ -83,7 +86,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
         <v-card v-else-if="state === 'error'" variant="tonal" class="state-card">
           <v-card-item>
             <template #prepend>
-              <v-icon color="error" size="32">mdi-shield-alert-outline</v-icon>
+              <v-icon color="error" size="32" :icon="mdiShieldAlertOutline" />
             </template>
             <v-card-title>{{ ru.auth.errorTitle }}</v-card-title>
           </v-card-item>
@@ -91,13 +94,13 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
             <v-alert type="error" variant="tonal" density="comfortable" role="alert">
               {{ errorMessage }}
             </v-alert>
-            <p v-if="showReopenHint" class="text-body-small text-medium-emphasis mt-3 mb-0">
+            <p v-if="sessionExpired" class="text-body-small text-medium-emphasis mt-3 mb-0">
               {{ ru.auth.expiredHint }}
             </p>
           </v-card-text>
           <v-card-actions class="px-4 pb-4">
             <v-spacer />
-            <v-btn color="primary" variant="flat" prepend-icon="mdi-refresh" @click="start">
+            <v-btn color="primary" variant="flat" :prepend-icon="mdiRefresh" @click="start">
               {{ ru.auth.retry }}
             </v-btn>
           </v-card-actions>
@@ -124,7 +127,7 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
                 size="small"
                 variant="text"
                 color="primary"
-                prepend-icon="mdi-clock-edit-outline"
+                :prepend-icon="mdiClockEditOutline"
                 @click="openTimezoneEditor"
               >
                 {{ ru.home.changeTimezone }}
@@ -180,6 +183,6 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
 }
 
 .state-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--app-border);
 }
 </style>

@@ -81,7 +81,7 @@ raid-scheduler/
 
 ## 6. Domain boundaries
 Keep domain logic independent of Telegram handlers and HTTP handlers. Both interfaces call the same service layer. Suggested services:
-- GroupService: create, rename, list, membership, ownership, deletion.
+- GroupService: create, list, membership, ownership, deletion.
 - InvitationService: issue, preview, revoke, confirm join.
 - PreferenceService: validate and replace weekly intervals; setup state.
 - TimezoneService: resolve upcoming reference week and convert recurring intervals.

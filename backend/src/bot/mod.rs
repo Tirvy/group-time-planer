@@ -6,9 +6,8 @@ pub mod notifications;
 pub mod sessions;
 pub mod texts;
 
-use std::{sync::Arc, time::Instant};
+use std::{fmt, sync::Arc, time::Instant};
 
-use chrono::Utc;
 use sqlx::SqlitePool;
 use teloxide::{
     RequestError,
@@ -26,10 +25,15 @@ use teloxide::{
 };
 use url::Url;
 
+use self::{
+    callbacks::CallbackAction,
+    sessions::{BeginCreation, BotSessions, CreationState},
+};
 use crate::{
     domain::{GroupId, GroupName, IanaTimezone, InvitationId, InvitationToken, TelegramId, UserId},
     services::{
         best_time, calendar as calendar_service,
+        clock::Clock,
         groups::{self, GroupError, GroupSummary},
         invitations::{self, InvitationError, JoinOutcome, RevokeOutcome},
         members::{self, MembersError},
@@ -37,11 +41,6 @@ use crate::{
         timetable,
         users::{self, TelegramProfile, User},
     },
-};
-
-use self::{
-    callbacks::CallbackAction,
-    sessions::{BeginCreation, BotSessions, CreationState},
 };
 
 #[derive(BotCommands, Clone, Debug)]
@@ -74,9 +73,20 @@ enum Command {
 }
 
 /// Runtime settings that handlers need besides the database.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BotSettings {
     pub public_base_url: Option<String>,
+    /// The same injectable clock used by the HTTP API.
+    pub clock: Arc<dyn Clock>,
+}
+
+impl fmt::Debug for BotSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BotSettings")
+            .field("public_base_url", &self.public_base_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Bot messages frequently contain user-controlled group names, including URLs.
@@ -246,10 +256,10 @@ async fn handle_command(
             send_members(&bot, chat, &pool, &sessions, &user).await?;
         }
         Command::BestTime => {
-            send_best_time(&bot, chat, &pool, &sessions, &user).await?;
+            send_best_time(&bot, chat, &pool, &sessions, &user, &settings).await?;
         }
         Command::Timetable => {
-            send_timetable(&bot, chat, &pool, &sessions, &user).await?;
+            send_timetable(&bot, chat, &pool, &sessions, &user, &settings).await?;
         }
         Command::Leave => {
             request_leave(&bot, chat, &pool, &sessions, &user).await?;
@@ -374,7 +384,7 @@ async fn handle_callback(
         }
         CallbackAction::MenuTimetable => {
             answer_silent(&bot, &query.id).await?;
-            send_timetable(&bot, chat, &pool, &sessions, &user).await?;
+            send_timetable(&bot, chat, &pool, &sessions, &user, &settings).await?;
         }
         CallbackAction::MenuHelp => {
             answer_silent(&bot, &query.id).await?;
@@ -825,6 +835,7 @@ async fn send_best_time(
     pool: &SqlitePool,
     sessions: &BotSessions,
     user: &User,
+    settings: &BotSettings,
 ) -> Result<(), RequestError> {
     let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
         return Ok(());
@@ -834,9 +845,9 @@ async fn send_best_time(
         return Ok(());
     };
 
+    let now = settings.clock.now();
     let calendar =
-        match calendar_service::group_calendar(pool, user.id, group.id, Utc::now(), timezone).await
-        {
+        match calendar_service::group_calendar(pool, user.id, group.id, now, timezone).await {
             Ok(calendar) => calendar,
             Err(error) => {
                 tracing::error!(error = %error, "failed to build calendar for best time");
@@ -866,6 +877,7 @@ async fn send_timetable(
     pool: &SqlitePool,
     sessions: &BotSessions,
     user: &User,
+    settings: &BotSettings,
 ) -> Result<(), RequestError> {
     let Some(group) = resolve_group(bot, chat, user.id, pool, sessions).await? else {
         return Ok(());
@@ -875,9 +887,9 @@ async fn send_timetable(
         return Ok(());
     };
 
+    let now = settings.clock.now();
     let calendar =
-        match calendar_service::group_calendar(pool, user.id, group.id, Utc::now(), timezone).await
-        {
+        match calendar_service::group_calendar(pool, user.id, group.id, now, timezone).await {
             Ok(calendar) => calendar,
             Err(error) => {
                 tracing::error!(error = %error, "failed to build calendar for timetable");
@@ -892,22 +904,20 @@ async fn send_timetable(
         calendar.week.end_date,
         calendar.viewer_timezone.name(),
     );
-    let png =
-        match tokio::task::spawn_blocking(move || timetable::render_png(&calendar, Utc::now()))
-            .await
-        {
-            Ok(Ok(png)) => png,
-            Ok(Err(error)) => {
-                tracing::error!(error = %error, "failed to render timetable PNG");
-                bot.send_text(chat, texts::GENERIC_ERROR).await?;
-                return Ok(());
-            }
-            Err(error) => {
-                tracing::error!(error = %error, "timetable task failed");
-                bot.send_text(chat, texts::GENERIC_ERROR).await?;
-                return Ok(());
-            }
-        };
+    let png = match tokio::task::spawn_blocking(move || timetable::render_png(&calendar, now)).await
+    {
+        Ok(Ok(png)) => png,
+        Ok(Err(error)) => {
+            tracing::error!(error = %error, "failed to render timetable PNG");
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
+            return Ok(());
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "timetable task failed");
+            bot.send_text(chat, texts::GENERIC_ERROR).await?;
+            return Ok(());
+        }
+    };
 
     bot.send_document(chat, InputFile::memory(png).file_name("timetable.png"))
         .caption(caption)

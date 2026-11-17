@@ -1,39 +1,29 @@
 import { computed, ref } from 'vue'
 
-import { ApiError, authenticate, updateTimezone } from '../api/client'
-import { ru } from '../i18n/ru'
+import { authenticate, updateTimezone } from '../api/client'
+import { describeError, isSessionExpired } from '../api/errors'
 import { initTelegram } from '../telegram/webapp'
 import type { UserDto } from '../types/api'
 
 export type SessionState = 'loading' | 'ready' | 'no-telegram' | 'error'
 
-const errorMessages: Record<string, string> = { ...ru.errors }
-
-function codeOf(error: unknown): string {
-  return error instanceof ApiError ? error.code : 'UNKNOWN'
-}
-
-function messageFor(code: string | null): string {
-  if (!code) return ru.errors.UNKNOWN
-  return errorMessages[code] ?? ru.errors.UNKNOWN
-}
-
 export function useSession() {
   const state = ref<SessionState>('loading')
   const user = ref<UserDto | null>(null)
-  const errorCode = ref<string | null>(null)
   const initData = ref('')
   const saving = ref(false)
   const saveError = ref<string | null>(null)
 
-  const errorMessage = computed(() => messageFor(errorCode.value))
+  const errorMessage = ref<string | null>(null)
+  const sessionExpired = ref(false)
   const timezoneRequired = computed(
     () => state.value === 'ready' && user.value !== null && !user.value.timezone_set,
   )
 
   async function start(): Promise<void> {
     state.value = 'loading'
-    errorCode.value = null
+    errorMessage.value = null
+    sessionExpired.value = false
     saveError.value = null
 
     const webApp = initTelegram()
@@ -49,7 +39,8 @@ export function useSession() {
       state.value = 'ready'
     } catch (error) {
       user.value = null
-      errorCode.value = codeOf(error)
+      errorMessage.value = describeError(error)
+      sessionExpired.value = isSessionExpired(error)
       state.value = 'error'
     }
   }
@@ -63,7 +54,7 @@ export function useSession() {
       user.value = response.user
       return true
     } catch (error) {
-      saveError.value = messageFor(codeOf(error))
+      saveError.value = describeError(error)
       return false
     } finally {
       saving.value = false
@@ -78,8 +69,8 @@ export function useSession() {
     state,
     user,
     initData,
-    errorCode,
     errorMessage,
+    sessionExpired,
     timezoneRequired,
     saving,
     saveError,
