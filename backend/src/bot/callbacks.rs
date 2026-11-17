@@ -3,6 +3,7 @@ use crate::domain::{GroupId, InvitationId, InvitationToken, UserId};
 pub const MENU_CREATE: &str = "menu:create";
 pub const MENU_GROUPS: &str = "menu:groups";
 pub const MENU_CALENDAR: &str = "menu:calendar";
+pub const MENU_TIMETABLE: &str = "menu:timetable";
 pub const MENU_HELP: &str = "menu:help";
 pub const CANCEL: &str = "cancel";
 
@@ -13,6 +14,7 @@ pub enum CallbackAction {
     MenuCreate,
     MenuGroups,
     MenuCalendar,
+    MenuTimetable,
     MenuHelp,
     SelectGroup(GroupId),
     JoinInvitation(InvitationToken),
@@ -29,6 +31,7 @@ pub fn parse(data: &str) -> Option<CallbackAction> {
         MENU_CREATE => Some(CallbackAction::MenuCreate),
         MENU_GROUPS => Some(CallbackAction::MenuGroups),
         MENU_CALENDAR => Some(CallbackAction::MenuCalendar),
+        MENU_TIMETABLE => Some(CallbackAction::MenuTimetable),
         MENU_HELP => Some(CallbackAction::MenuHelp),
         CANCEL => Some(CallbackAction::Cancel),
         other => {
@@ -129,6 +132,7 @@ mod tests {
         assert_eq!(parse(MENU_CREATE), Some(CallbackAction::MenuCreate));
         assert_eq!(parse(MENU_GROUPS), Some(CallbackAction::MenuGroups));
         assert_eq!(parse(MENU_CALENDAR), Some(CallbackAction::MenuCalendar));
+        assert_eq!(parse(MENU_TIMETABLE), Some(CallbackAction::MenuTimetable));
         assert_eq!(parse(MENU_HELP), Some(CallbackAction::MenuHelp));
         assert_eq!(parse(CANCEL), Some(CallbackAction::Cancel));
     }

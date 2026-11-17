@@ -22,6 +22,10 @@ pub fn main_menu() -> InlineKeyboardMarkup {
             callbacks::MENU_CALENDAR,
         )],
         vec![InlineKeyboardButton::callback(
+            "Расписание картинкой",
+            callbacks::MENU_TIMETABLE,
+        )],
+        vec![InlineKeyboardButton::callback(
             "Помощь",
             callbacks::MENU_HELP,
         )],
@@ -165,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn main_menu_contains_three_actions() {
+    fn main_menu_contains_expected_actions() {
         let data = callback_data(&main_menu());
         assert_eq!(
             data,
@@ -173,6 +177,7 @@ mod tests {
                 callbacks::MENU_CREATE.to_owned(),
                 callbacks::MENU_GROUPS.to_owned(),
                 callbacks::MENU_CALENDAR.to_owned(),
+                callbacks::MENU_TIMETABLE.to_owned(),
                 callbacks::MENU_HELP.to_owned()
             ]
         );

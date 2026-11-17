@@ -5,6 +5,7 @@ All user-facing text is Russian. Suggested main actions:
 - «Мои группы»
 - «Создать группу»
 - «Открыть календарь»
+- «Расписание картинкой» — отправляет PNG-расписание активной группы
 - «Помощь»
 
 Use Telegram commands as shortcuts, not as the only discoverable navigation.

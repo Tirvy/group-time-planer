@@ -372,6 +372,10 @@ async fn handle_callback(
             answer_silent(&bot, &query.id).await?;
             send_calendar_link(&bot, chat, &pool, &sessions, &user, &settings).await?;
         }
+        CallbackAction::MenuTimetable => {
+            answer_silent(&bot, &query.id).await?;
+            send_timetable(&bot, chat, &pool, &sessions, &user).await?;
+        }
         CallbackAction::MenuHelp => {
             answer_silent(&bot, &query.id).await?;
             bot.send_text(chat, texts::help())
