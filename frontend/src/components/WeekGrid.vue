@@ -207,6 +207,17 @@ onBeforeUnmount(() => {
           @click="onCellClick($event, dayIndex, slot)"
         />
       </template>
+
+      <div class="corner corner--bottom" aria-hidden="true" />
+      <div
+        v-for="day in DAYS"
+        :key="`bottom-${day.value}`"
+        class="day-head day-head--bottom"
+        :title="day.full"
+        aria-hidden="true"
+      >
+        {{ day.short }}
+      </div>
     </div>
   </div>
 </template>
@@ -240,6 +251,15 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: rgba(var(--v-theme-on-surface), 0.85);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.day-head--bottom {
+  border-bottom: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.corner--bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .time-label {

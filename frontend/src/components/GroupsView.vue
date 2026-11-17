@@ -480,27 +480,18 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
           </span>
         </div>
 
-        <v-btn-toggle
+        <v-tabs
           v-model="activeTab"
-          mandatory
-          divided
           color="primary"
           density="comfortable"
-          class="mb-3 flex-wrap"
+          grow
+          class="planner-tabs mb-3"
         >
-          <v-btn value="mine" prepend-icon="mdi-calendar-edit">
-            {{ ru.planner.tabMine }}
-          </v-btn>
-          <v-btn value="combined" prepend-icon="mdi-calendar-week">
-            {{ ru.planner.tabCombined }}
-          </v-btn>
-          <v-btn value="members" prepend-icon="mdi-account-group-outline">
-            {{ ru.planner.tabMembers }}
-          </v-btn>
-          <v-btn value="best" prepend-icon="mdi-trophy-outline">
-            {{ ru.planner.tabBest }}
-          </v-btn>
-        </v-btn-toggle>
+          <v-tab value="mine">{{ ru.planner.tabMine }}</v-tab>
+          <v-tab value="combined">{{ ru.planner.tabCombined }}</v-tab>
+          <v-tab value="members">{{ ru.planner.tabMembers }}</v-tab>
+          <v-tab value="best">{{ ru.planner.tabBest }}</v-tab>
+        </v-tabs>
 
         <div v-show="activeTab === 'mine'">
           <div
@@ -738,6 +729,18 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
 <style scoped>
 .state-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.planner-tabs {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.planner-tabs :deep(.v-tab) {
+  min-width: 0;
+  padding-inline: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .error-text {

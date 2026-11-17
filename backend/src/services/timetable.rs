@@ -56,6 +56,7 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     let height = GRID_TOP
         + DAY_HEADER_H
         + GRID_H
+        + DAY_HEADER_H
         + LEGEND_GAP
         + 24.0
         + legend_rows * LEGEND_ROW_H
@@ -100,26 +101,7 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     let grid_top = GRID_TOP + DAY_HEADER_H;
 
     // Day headers: weekday and date on separate centered rows.
-    for (day, short) in DAY_SHORT.iter().enumerate() {
-        let x = grid_left + day as f32 * DAY_W;
-        let center_x = x + DAY_W / 2.0;
-        let date = calendar.week.start_date + Duration::days(day as i64);
-        let _ = write!(
-            svg,
-            r#"<rect x="{x}" y="{GRID_TOP}" width="{DAY_W}" height="{DAY_HEADER_H}" fill="{SURFACE}"/>"#
-        );
-        let _ = write!(
-            svg,
-            r#"<text x="{center_x}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="{TEXT}">{short}</text>"#,
-            GRID_TOP + 17.0
-        );
-        let _ = write!(
-            svg,
-            r#"<text x="{center_x}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="11" fill="{MUTED}">{}</text>"#,
-            GRID_TOP + 32.0,
-            date.format("%d.%m")
-        );
-    }
+    write_day_headers(&mut svg, calendar, GRID_TOP);
 
     // Grid background + lines
     let _ = write!(
@@ -197,7 +179,9 @@ pub fn render_svg(calendar: &GroupCalendar, now: DateTime<Utc>) -> TimetableSvg 
     }
 
     // Legend
-    let legend_top = grid_top + GRID_H + LEGEND_GAP;
+    write_day_headers(&mut svg, calendar, grid_top + GRID_H);
+
+    let legend_top = grid_top + GRID_H + DAY_HEADER_H + LEGEND_GAP;
     let _ = write!(
         svg,
         r#"<text x="{MARGIN}" y="{legend_top}" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="{TEXT}">Участники</text>"#
@@ -293,6 +277,30 @@ pub fn render_png(calendar: &GroupCalendar, now: DateTime<Utc>) -> Result<Vec<u8
     pixmap
         .encode_png()
         .map_err(|error| TimetableError::Encode(error.to_string()))
+}
+
+fn write_day_headers(svg: &mut String, calendar: &GroupCalendar, top: f32) {
+    let grid_left = MARGIN + TIME_W;
+    for (day, short) in DAY_SHORT.iter().enumerate() {
+        let x = grid_left + day as f32 * DAY_W;
+        let center_x = x + DAY_W / 2.0;
+        let date = calendar.week.start_date + Duration::days(day as i64);
+        let _ = write!(
+            svg,
+            r#"<rect x="{x}" y="{top}" width="{DAY_W}" height="{DAY_HEADER_H}" fill="{SURFACE}"/>"#
+        );
+        let _ = write!(
+            svg,
+            r#"<text x="{center_x}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="{TEXT}">{short}</text>"#,
+            top + 17.0
+        );
+        let _ = write!(
+            svg,
+            r#"<text x="{center_x}" y="{}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif" font-size="11" fill="{MUTED}">{}</text>"#,
+            top + 32.0,
+            date.format("%d.%m")
+        );
+    }
 }
 
 fn font_database() -> Arc<resvg::usvg::fontdb::Database> {
@@ -423,6 +431,11 @@ mod tests {
         assert!(svg.contains("Пётр"));
         assert!(svg.contains("календарь не настроен"));
         assert!(svg.contains(">ПН</text>"));
+        assert_eq!(
+            svg.matches(">ПН</text>").count(),
+            2,
+            "day header repeated at the bottom"
+        );
         assert!(svg.contains(">16.11</text>"));
         assert!(svg.contains("Пустая клетка") || svg.contains("пустая клетка"));
     }

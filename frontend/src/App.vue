@@ -112,13 +112,15 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
         />
 
         <template v-else-if="state === 'ready' && user">
-          <v-card variant="tonal" class="state-card mb-4">
-            <div class="d-flex align-center flex-wrap ga-2 px-4 py-2">
-              <span class="text-body-small text-medium-emphasis">
+          <GroupsView :init-data="initData" />
+
+          <v-card variant="tonal" class="state-card mt-4">
+            <div class="timezone-row px-4 py-2">
+              <span class="timezone-name text-body-small text-medium-emphasis">
                 {{ user.timezone }}
               </span>
-              <v-spacer />
               <v-btn
+                class="timezone-action text-body-small"
                 size="small"
                 variant="text"
                 color="primary"
@@ -129,8 +131,6 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
               </v-btn>
             </div>
           </v-card>
-
-          <GroupsView :init-data="initData" />
         </template>
       </v-container>
     </v-main>
@@ -154,7 +154,29 @@ async function saveChangedTimezone(timezone: string): Promise<void> {
 <style scoped>
 .app-shell {
   padding-top: calc(12px + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+.timezone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.timezone-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.timezone-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .state-card {

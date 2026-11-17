@@ -136,6 +136,18 @@ function cellLabel(dayIndex: number, slot: number): string {
               />
             </button>
           </template>
+
+          <div class="corner corner--bottom" aria-hidden="true" />
+          <div
+            v-for="day in days"
+            :key="`bottom-${day.value}`"
+            class="day-head day-head--bottom"
+            :title="day.full"
+            aria-hidden="true"
+          >
+            <span class="day-short">{{ day.short }}</span>
+            <span class="day-date">{{ day.date }}</span>
+          </div>
         </div>
       </div>
 
@@ -243,6 +255,15 @@ function cellLabel(dayIndex: number, slot: number): string {
   justify-content: center;
   height: 34px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.day-head--bottom {
+  border-bottom: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.corner--bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .day-short {
