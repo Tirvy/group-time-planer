@@ -159,3 +159,31 @@ Install Cyrillic-capable system fonts (for example `fonts-dejavu-core` on
 Debian/Ubuntu) so `/timetable` PNG text renders. Use systemd or another process
 supervisor, and point the proxy at `127.0.0.1:8080`.
 
+### Railway (or any Docker PaaS)
+
+The included `Dockerfile` runs as a single container and binds to `$PORT`
+(default `8080`), so it deploys to Railway without extra build configuration:
+
+```bash
+railway login
+railway init --name group-time-planer
+railway add --service backend
+railway volume add -m /app/data        # persistent SQLite database
+
+railway variable set \
+  DATABASE_PATH=/app/data/app.db \
+  FRONTEND_DIST=/app/frontend/dist \
+  PUBLIC_BASE_URL=https://YOUR_RAILWAY_DOMAIN \
+  TELOXIDE_TOKEN=<token> \
+  --skip-deploys
+
+railway domain --service backend       # generates the public HTTPS URL
+railway up                             # builds and deploys the working tree
+```
+
+`PUBLIC_BASE_URL` must match the generated domain so the bot's "Открыть
+календарь" Web App button works; point the @BotFather Mini App URL at the same
+origin. The entrypoint hands the mounted volume to the unprivileged `app` user,
+so the database survives redeploys — never detach or delete the volume to "fix"
+a deployment.
+

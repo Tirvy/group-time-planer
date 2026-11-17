@@ -24,24 +24,25 @@ RUN apt-get update \
         ca-certificates \
         curl \
         fonts-dejavu-core \
+        util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=backend /app/target/release/raid-scheduler-backend /usr/local/bin/raid-scheduler-backend
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY --from=frontend /app/frontend/dist /app/frontend/dist
 
-RUN useradd --system --uid 10001 --create-home --home-dir /app app \
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && useradd --system --uid 10001 --create-home --home-dir /app app \
     && mkdir -p /app/data \
     && chown -R app:app /app
 
-USER app
-ENV APP_BIND_ADDR=0.0.0.0:8080 \
-    DATABASE_PATH=/app/data/app.db \
+ENV DATABASE_PATH=/app/data/app.db \
     FRONTEND_DIST=/app/frontend/dist \
     RUST_LOG=info
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8080}/health" || exit 1
 
-CMD ["raid-scheduler-backend"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
