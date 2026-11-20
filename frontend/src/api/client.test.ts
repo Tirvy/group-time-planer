@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, authenticate, fetchBestTime, fetchTimetablePng } from './client'
+import { ApiError, authenticate, fetchBestTime } from './client'
 
 const fetchMock = vi.fn()
 
@@ -75,23 +75,5 @@ describe('api client', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect(error.code).toBe('NETWORK_ERROR')
     expect(error.status).toBeNull()
-  })
-
-  it('returns the timetable blob and maps its error envelope', async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      blob: async () => new Blob(['png']),
-    })
-    const blob = await fetchTimetablePng('init', '7')
-    expect(requestHeaders().Accept).toBe('image/png')
-    expect(await blob.text()).toBe('png')
-
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ error: { code: 'TIMEZONE_REQUIRED' } }, 409),
-    )
-    await expect(fetchTimetablePng('init', '7')).rejects.toMatchObject({
-      code: 'TIMEZONE_REQUIRED',
-      status: 409,
-    })
   })
 })

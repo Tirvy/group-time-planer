@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
 
-import { mdiAccountGroupOutline, mdiChevronRight, mdiDownload, mdiRefresh } from '@mdi/js'
+import { mdiAccountGroupOutline, mdiChevronRight, mdiRefresh } from '@mdi/js'
 
 import {
   fetchBestTime,
@@ -9,7 +9,6 @@ import {
   fetchGroups,
   fetchMemberCalendar,
   fetchPreferences,
-  fetchTimetablePng,
   savePreferences,
 } from '../api/client'
 import { describeError } from '../api/errors'
@@ -103,8 +102,6 @@ const {
 )
 
 const selectedMember = ref<CalendarMember | null>(null)
-const pngLoading = ref(false)
-const pngError = ref<string | null>(null)
 
 onMounted(loadGroups)
 
@@ -177,8 +174,6 @@ async function selectGroup(group: GroupDto, checkDirty = true): Promise<void> {
   resetBestTime()
   resetMember()
   selectedMember.value = null
-  pngLoading.value = false
-  pngError.value = null
   await runPreferences(group.id)
 }
 
@@ -229,30 +224,6 @@ function retryBestTimeLoad(): void {
   if (group) void retryBestTime(group.id)
 }
 
-async function downloadPng(): Promise<void> {
-  const group = selected.value
-  if (!group || pngLoading.value) return
-
-  pngLoading.value = true
-  pngError.value = null
-
-  try {
-    const blob = await fetchTimetablePng(props.initData, group.id)
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'timetable.png'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 2000)
-  } catch (error) {
-    pngError.value = describeError(error, ru.planner.pngError)
-  } finally {
-    pngLoading.value = false
-  }
-}
-
 function memberKey(groupId: string, memberId: string): string {
   return `${groupId}:${memberId}`
 }
@@ -300,7 +271,6 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
       resetBestTime()
       resetMember()
       selectedMember.value = null
-      pngError.value = null
     }
     snackbar.value = true
   } catch (error) {
@@ -388,22 +358,6 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
             <v-card-title>{{ selected.name }}</v-card-title>
           </v-card-item>
         </v-card>
-
-        <div class="d-flex align-center flex-wrap ga-2 mb-3">
-          <v-btn
-            size="small"
-            variant="tonal"
-            color="primary"
-            :prepend-icon="mdiDownload"
-            :loading="pngLoading"
-            @click="downloadPng"
-          >
-            {{ pngLoading ? ru.planner.downloadingPng : ru.planner.downloadPng }}
-          </v-btn>
-          <span v-if="pngError" class="text-body-small error-text">
-            {{ pngError }}
-          </span>
-        </div>
 
         <v-tabs
           v-model="activeTab"
@@ -562,10 +516,6 @@ async function handleSave(intervals: PreferenceInterval[]): Promise<void> {
   font-size: 0.75rem;
   letter-spacing: 0;
   text-transform: none;
-}
-
-.error-text {
-  color: rgb(var(--v-theme-error));
 }
 
 .group-color {

@@ -117,9 +117,6 @@ export const ru = {
     bestShowLess: 'Свернуть',
     bestMembersTitle: 'Доступны в это время',
     memberTimezone: 'Пояс участника',
-    downloadPng: 'Скачать PNG',
-    downloadingPng: 'Готовим PNG…',
-    pngError: 'Не удалось сформировать PNG.',
     preferredBy: (count: number) =>
       count === 1
         ? `доступен ${participantsRu(count)}`

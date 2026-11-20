@@ -123,37 +123,6 @@ export async function fetchBestTime(
   )
 }
 
-export async function fetchTimetablePng(
-  initData: string,
-  groupId: string,
-): Promise<Blob> {
-  let response: Response
-  try {
-    response = await fetch(
-      `/api/groups/${encodeURIComponent(groupId)}/timetable.png`,
-      {
-        headers: {
-          ...authHeaders(initData),
-          Accept: 'image/png',
-        },
-      },
-    )
-  } catch {
-    throw new ApiError('NETWORK_ERROR', 'network request failed')
-  }
-
-  if (!response.ok) {
-    const body = (await readJson(response)) as ErrorEnvelope | null
-    throw new ApiError(
-      body?.error?.code ?? 'HTTP_ERROR',
-      body?.error?.message ?? `request failed with ${response.status}`,
-      response.status,
-    )
-  }
-
-  return response.blob()
-}
-
 function authHeaders(initData: string): Record<string, string> {
   return { Authorization: `tma ${initData}` }
 }
